@@ -1,23 +1,36 @@
 import Foundation
+import SQLite3
 
 struct CodexUsageProvider {
     private let tailChunkBytes = 1_048_576
     private let maxRolloutFilesToScan = 80
+    private let loggedRateLimitMarker = "\"type\":\"codex.rate_limits\""
 
     func fetch(configuration: UsageDataConfiguration) -> UsageSnapshot {
         let path = NSString(string: configuration.codexSessionsPath).expandingTildeInPath
         let rootURL = URL(fileURLWithPath: path)
 
         do {
+            let loggedEvent = latestLoggedRateLimitEvent(codexHomeURL: codexHomeURL(from: rootURL))
             let rolloutURLs = try rolloutFiles(from: rootURL)
             guard !rolloutURLs.isEmpty else {
+                if let loggedEvent {
+                    return snapshot(
+                        from: loggedEvent,
+                        dailyTokenUsage: nil,
+                        weeklyTokenUsage: nil,
+                        monthlyTokenUsage: nil,
+                        staleInterval: configuration.staleInterval
+                    )
+                }
+
                 return .unavailable(
                     tool: .codex,
                     message: String(format: NSLocalizedString("provider.codexNoRollouts", comment: ""), configuration.codexSessionsPath)
                 )
             }
 
-            var latestEvent: ParsedRateLimitEvent?
+            var latestEvent = loggedEvent
             for rollout in rolloutURLs.prefix(maxRolloutFilesToScan) {
                 if let latestEvent,
                    latestEvent.updatedAt != .distantPast,
@@ -57,6 +70,162 @@ struct CodexUsageProvider {
         } catch {
             return .error(tool: .codex, message: error.localizedDescription)
         }
+    }
+
+    private func codexHomeURL(from sessionsURL: URL) -> URL? {
+        let components = sessionsURL.standardizedFileURL.pathComponents
+        guard let codexIndex = components.lastIndex(of: ".codex") else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: NSString.path(withComponents: Array(components.prefix(codexIndex + 1))))
+    }
+
+    private func latestLoggedRateLimitEvent(codexHomeURL: URL?) -> ParsedRateLimitEvent? {
+        guard let codexHomeURL else {
+            return nil
+        }
+
+        let url = codexHomeURL.appendingPathComponent("logs_2.sqlite")
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX, nil) == SQLITE_OK else {
+            return nil
+        }
+        defer { sqlite3_close(database) }
+
+        let query = """
+            SELECT feedback_log_body
+            FROM logs
+            WHERE feedback_log_body LIKE '%"type":"codex.rate_limits"%'
+            ORDER BY ts DESC, ts_nanos DESC
+            LIMIT 20
+            """
+
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, query, -1, &statement, nil) == SQLITE_OK else {
+            return nil
+        }
+        defer { sqlite3_finalize(statement) }
+
+        while sqlite3_step(statement) == SQLITE_ROW {
+            guard let textPointer = sqlite3_column_text(statement, 0) else {
+                continue
+            }
+
+            let text = String(cString: textPointer)
+            if let event = parseLatestLoggedRateLimitEvent(from: text, fileURL: url) {
+                return event
+            }
+        }
+
+        return nil
+    }
+
+    private func parseLatestLoggedRateLimitEvent(
+        from text: String,
+        fileURL: URL
+    ) -> ParsedRateLimitEvent? {
+        var searchRange = text.startIndex..<text.endIndex
+        while let markerRange = text.range(of: loggedRateLimitMarker, options: [.backwards], range: searchRange),
+              searchRange.lowerBound < markerRange.lowerBound {
+            defer {
+                searchRange = text.startIndex..<markerRange.lowerBound
+            }
+
+            guard let jsonStart = jsonObjectStart(before: markerRange.lowerBound, in: text),
+                  let jsonEnd = jsonObjectEnd(in: text, from: jsonStart)
+            else {
+                continue
+            }
+
+            let jsonText = String(text[jsonStart..<jsonEnd])
+            guard let event = parseLoggedRateLimitEvent(from: jsonText, fileURL: fileURL) else {
+                continue
+            }
+
+            return event
+        }
+
+        return nil
+    }
+
+    private func parseLoggedRateLimitEvent(from jsonText: String, fileURL: URL) -> ParsedRateLimitEvent? {
+        guard
+            let data = jsonText.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            object["type"] as? String == "codex.rate_limits",
+            let rateLimits = object["rate_limits"] as? [String: Any]
+        else {
+            return nil
+        }
+
+        let parsed = parseSlots(rateLimits)
+        guard parsed.fiveHourRemaining != nil || parsed.weeklyRemaining != nil else {
+            return nil
+        }
+
+        let updatedAt = date(from: object["timestamp"])
+            ?? inferredEventDate(from: rateLimits)
+            ?? modificationDate(for: fileURL)
+            ?? .distantPast
+
+        return ParsedRateLimitEvent(
+            fiveHourRemainingPercent: parsed.fiveHourRemaining,
+            weeklyRemainingPercent: parsed.weeklyRemaining,
+            fiveHourResetAt: parsed.fiveHourResetAt,
+            weeklyResetAt: parsed.weeklyResetAt,
+            updatedAt: updatedAt
+        )
+    }
+
+    private func jsonObjectStart(before index: String.Index, in text: String) -> String.Index? {
+        var current = index
+        while current > text.startIndex {
+            current = text.index(before: current)
+            if text[current] == "{" {
+                return current
+            }
+        }
+
+        return nil
+    }
+
+    private func jsonObjectEnd(in text: String, from start: String.Index) -> String.Index? {
+        var depth = 0
+        var isInsideString = false
+        var isEscaped = false
+        var index = start
+
+        while index < text.endIndex {
+            let character = text[index]
+
+            if isInsideString {
+                if isEscaped {
+                    isEscaped = false
+                } else if character == "\\" {
+                    isEscaped = true
+                } else if character == "\"" {
+                    isInsideString = false
+                }
+            } else if character == "\"" {
+                isInsideString = true
+            } else if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return text.index(after: index)
+                }
+            }
+
+            index = text.index(after: index)
+        }
+
+        return nil
     }
 
     private func rolloutFiles(from rootURL: URL) throws -> [RolloutFile] {
@@ -291,8 +460,9 @@ struct CodexUsageProvider {
 
             let usedPercent = number(slot["used_percent"]) ?? number(slot["used_percentage"])
             let remaining = UsageMath.remainingPercent(fromUsedPercent: usedPercent)
-            let resetAt = date(from: slot["resets_at"])
+            let resetAt = date(from: slot["resets_at"]) ?? date(from: slot["reset_at"])
             let windowMinutes = number(slot["window_minutes"])
+                ?? number(slot["limit_window_seconds"]).map { $0 / 60 }
 
             if let windowMinutes, windowMinutes <= 300 {
                 fiveHourRemaining = remaining
@@ -304,6 +474,23 @@ struct CodexUsageProvider {
         }
 
         return (fiveHourRemaining, weeklyRemaining, fiveHourResetAt, weeklyResetAt)
+    }
+
+    private func inferredEventDate(from rateLimits: [String: Any]) -> Date? {
+        var dates: [Date] = []
+
+        for key in ["primary", "secondary"] {
+            guard let slot = rateLimits[key] as? [String: Any],
+                  let resetAt = date(from: slot["resets_at"]) ?? date(from: slot["reset_at"]),
+                  let resetAfterSeconds = number(slot["reset_after_seconds"])
+            else {
+                continue
+            }
+
+            dates.append(resetAt.addingTimeInterval(-resetAfterSeconds))
+        }
+
+        return dates.max()
     }
 
     private func modificationDate(for url: URL) -> Date? {

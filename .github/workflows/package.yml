@@ -1,0 +1,56 @@
+name: Package macOS App
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version shown in the app and DMG filename"
+        required: true
+        default: "0.0.0-local"
+
+permissions:
+  contents: read
+
+env:
+  MARKETING_VERSION: ${{ inputs.version }}
+  BUILD_NUMBER: ${{ github.run_number }}
+  BUILD_DIR: build/release
+
+jobs:
+  package:
+    name: Build unsigned universal DMG
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install build helpers
+        run: |
+          python3 -m pip install PyYAML
+          brew install create-dmg
+
+      - name: Generate localization catalog
+        run: make l10n
+
+      - name: Build DMG
+        run: script/release_build.sh dmg
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-battery-${{ inputs.version }}-universal-unsigned
+          path: |
+            build/release/*.dmg
+            build/release/*.dmg.sha256
+          if-no-files-found: error

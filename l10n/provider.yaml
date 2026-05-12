@@ -1,0 +1,6 @@
+codexNoRollouts:
+  en: "No Codex rollout JSONL found under %@."
+  zh: "%@ 下未找到 Codex rollout JSONL。"
+codexNoEvent:
+  en: "No token_count rate_limits event found in recent Codex rollouts."
+  zh: "近期 Codex rollout 中未找到 token_count rate_limits 事件。"

@@ -1,0 +1,139 @@
+name: Release macOS DMG
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Release tag to create or update"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+env:
+  PROJECT: agent-battery.xcodeproj
+  SCHEME: agent-battery
+  CONFIGURATION: Release
+  APP_NAME: agent-battery
+  DISPLAY_NAME: Agent Battery
+  BUILD_DIR: build/release
+
+jobs:
+  build-and-release:
+    name: Build unsigned universal DMG
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.4.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: |
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-version
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Install localization tooling
+        run: python3 -m pip install PyYAML
+
+      - name: Generate localization catalog
+        run: make l10n
+
+      - name: Install create-dmg
+        run: brew install create-dmg
+
+      - name: Resolve release version
+        env:
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            RELEASE_TAG="$INPUT_TAG_NAME"
+          else
+            RELEASE_TAG="$GITHUB_REF_NAME"
+          fi
+
+          MARKETING_VERSION="${RELEASE_TAG#v}"
+          BUILD_NUMBER="$GITHUB_RUN_NUMBER"
+
+          echo "RELEASE_TAG=$RELEASE_TAG" >> "$GITHUB_ENV"
+          echo "MARKETING_VERSION=$MARKETING_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+
+      - name: Extract tag annotation as release notes
+        run: |
+          set -euo pipefail
+
+          git fetch origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG" --force --no-tags || true
+
+          TAG_TYPE="$(git cat-file -t "$RELEASE_TAG" 2>/dev/null || echo '')"
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+
+          if [[ "$TAG_TYPE" == "tag" ]]; then
+            git for-each-ref "refs/tags/$RELEASE_TAG" \
+              --format='%(contents:body)' > "$NOTES_FILE"
+            if [[ ! -s "$NOTES_FILE" ]]; then
+              git for-each-ref "refs/tags/$RELEASE_TAG" \
+                --format='%(contents)' > "$NOTES_FILE"
+            fi
+          else
+            : > "$NOTES_FILE"
+          fi
+
+          if [[ ! -s "$NOTES_FILE" ]]; then
+            echo "Unsigned universal macOS build for Apple silicon and Intel Macs." > "$NOTES_FILE"
+          fi
+
+          echo "RELEASE_NOTES_FILE=$NOTES_FILE" >> "$GITHUB_ENV"
+
+      - name: Build & package DMG
+        run: |
+          set -euo pipefail
+
+          script/release_build.sh dmg
+
+          DMG_PATH="$BUILD_DIR/$APP_NAME-$MARKETING_VERSION-universal-unsigned.dmg"
+          echo "DMG_PATH=$DMG_PATH" >> "$GITHUB_ENV"
+          echo "SHA256_PATH=$DMG_PATH.sha256" >> "$GITHUB_ENV"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-battery-universal-unsigned-dmg
+          path: |
+            build/release/*.dmg
+            build/release/*.dmg.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RELEASE_NOTES_FILE"
+            gh release upload "$RELEASE_TAG" "$DMG_PATH" "$SHA256_PATH" --clobber
+          else
+            gh release create "$RELEASE_TAG" "$DMG_PATH" "$SHA256_PATH" \
+              --target "$GITHUB_SHA" \
+              --title "$RELEASE_TAG" \
+              --notes-file "$RELEASE_NOTES_FILE"
+          fi

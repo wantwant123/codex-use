@@ -1,0 +1,9 @@
+waitingFirstRefresh:
+  en: "Waiting for first refresh."
+  zh: "等待首次刷新。"
+usingCachedData:
+  en: "Using cached data."
+  zh: "正在使用缓存数据。"
+usingCachedDataWith:
+  en: "Using cached data; %@"
+  zh: "正在使用缓存数据；%@"

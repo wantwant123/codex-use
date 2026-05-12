@@ -1,0 +1,51 @@
+fiveHourRemaining:
+  en: "5h Remaining"
+  zh: "5 小时剩余"
+weeklyRemaining:
+  en: "Weekly Remaining"
+  zh: "每周剩余"
+session:
+  en: "Session"
+  zh: "会话"
+tokenUsage:
+  en: "Token Usage"
+  zh: "Token 用量"
+todayTokens:
+  en: "Today Tokens"
+  zh: "今日 Token"
+weekTokens:
+  en: "This Week"
+  zh: "本周"
+monthTokens:
+  en: "This Month"
+  zh: "本月"
+percentLeft:
+  en: "%@ left"
+  zh: "剩余 %@"
+resetsIn:
+  en: "Resets in %@"
+  zh: "%@ 后重置"
+resetUnknown:
+  en: "Reset unknown"
+  zh: "重置时间未知"
+tokensValue:
+  en: "%@ tokens"
+  zh: "%@ tokens"
+noTokenData:
+  en: "No token data"
+  zh: "暂无 token 数据"
+nextUpdate:
+  en: "Next update: %@"
+  zh: "下次更新：%@"
+historyTitle:
+  en: "Trend"
+  zh: "趋势"
+historyNoData:
+  en: "Waiting for history"
+  zh: "等待历史记录"
+historyFiveHour:
+  en: "5h"
+  zh: "5小时"
+historyWeekly:
+  en: "Week"
+  zh: "每周"

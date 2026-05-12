@@ -11,7 +11,6 @@ struct MenuBarPanelView: View {
         VStack(alignment: .leading, spacing: 12) {
             UsageToolCardView(
                 snapshot: store.snapshot(for: .codex),
-                level: store.level(for: store.snapshot(for: .codex)),
                 lastRefreshAt: store.lastRefreshAt,
                 refreshInterval: settings.refreshInterval,
                 onSettings: showSettings,

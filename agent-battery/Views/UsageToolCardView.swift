@@ -2,14 +2,13 @@ import SwiftUI
 
 struct UsageToolCardView: View {
     let snapshot: UsageSnapshot
-    let level: UsageLevel
     let lastRefreshAt: Date?
     let refreshInterval: RefreshInterval
     let onSettings: () -> Void
     let onRefresh: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             header
             actions
             quotaRows
@@ -55,10 +54,11 @@ struct UsageToolCardView: View {
     }
 
     private var quotaRows: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             UsageBarRow(
                 title: "usage.session",
-                dotColor: color(for: level),
+                dotColor: remainingColor(snapshot.fiveHourRemainingPercent),
+                fillColor: remainingColor(snapshot.fiveHourRemainingPercent),
                 fillFraction: fraction(fromPercent: snapshot.fiveHourRemainingPercent),
                 leadingText: percentLeftText(snapshot.fiveHourRemainingPercent),
                 trailingText: resetText(snapshot.fiveHourResetAt)
@@ -66,7 +66,8 @@ struct UsageToolCardView: View {
 
             UsageBarRow(
                 title: "usage.weeklyRemaining",
-                dotColor: color(for: weeklyLevel),
+                dotColor: remainingColor(snapshot.weeklyRemainingPercent),
+                fillColor: remainingColor(snapshot.weeklyRemainingPercent),
                 fillFraction: fraction(fromPercent: snapshot.weeklyRemainingPercent),
                 leadingText: percentLeftText(snapshot.weeklyRemainingPercent),
                 trailingText: resetText(snapshot.weeklyResetAt)
@@ -75,7 +76,7 @@ struct UsageToolCardView: View {
     }
 
     private var tokenRows: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             Text("usage.tokenUsage")
                 .font(.headline)
 
@@ -83,6 +84,7 @@ struct UsageToolCardView: View {
                 UsageBarRow(
                     title: LocalizedStringKey(metric.titleKey),
                     dotColor: metric.color,
+                    fillColor: tokenFillColor,
                     fillFraction: tokenFraction(metric.value),
                     leadingText: tokenText(metric.value),
                     trailingText: metric.trailingText
@@ -102,16 +104,16 @@ struct UsageToolCardView: View {
         .padding(.top, 2)
     }
 
-    private var weeklyLevel: UsageLevel {
-        UsageMath.level(for: snapshot.weeklyRemainingPercent, warningThreshold: 40, criticalThreshold: 15)
-    }
-
     private var tokenMetrics: [TokenMetric] {
         [
-            TokenMetric(titleKey: "usage.todayTokens", value: snapshot.dailyTokenUsage, color: .green),
-            TokenMetric(titleKey: "usage.weekTokens", value: snapshot.weeklyTokenUsage, color: .orange),
-            TokenMetric(titleKey: "usage.monthTokens", value: snapshot.monthlyTokenUsage, color: .blue),
+            TokenMetric(titleKey: "usage.todayTokens", value: snapshot.dailyTokenUsage, color: tokenFillColor),
+            TokenMetric(titleKey: "usage.weekTokens", value: snapshot.weeklyTokenUsage, color: tokenFillColor),
+            TokenMetric(titleKey: "usage.monthTokens", value: snapshot.monthlyTokenUsage, color: tokenFillColor),
         ]
+    }
+
+    private var tokenFillColor: Color {
+        Color(red: 0.04, green: 0.42, blue: 0.95)
     }
 
     private var maxTokenUsage: Int {
@@ -151,17 +153,17 @@ struct UsageToolCardView: View {
         String(format: NSLocalizedString("usage.tokensValue", comment: ""), UsageFormatters.compactTokenCountText(value))
     }
 
-    private func color(for level: UsageLevel) -> Color {
-        switch level {
-        case .normal:
-            .green
-        case .warning:
-            .yellow
-        case .critical:
-            .red
-        case .unavailable:
-            .secondary
+    private func remainingColor(_ percent: Double?) -> Color {
+        guard let percent else {
+            return .secondary
         }
+
+        let clamped = UsageMath.clampPercent(percent) / 100
+        return Color(
+            hue: 0.33 * clamped,
+            saturation: 0.84,
+            brightness: 0.82
+        )
     }
 }
 
@@ -190,12 +192,13 @@ private struct DashboardButton: View {
 private struct UsageBarRow: View {
     let title: LocalizedStringKey
     let dotColor: Color
+    let fillColor: Color
     let fillFraction: Double
     let leadingText: String
     let trailingText: String
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 6) {
                 Text(title)
                     .font(.headline)
@@ -207,14 +210,14 @@ private struct UsageBarRow: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color(nsColor: .separatorColor).opacity(0.16))
+                        .fill(Color(nsColor: .separatorColor).opacity(0.10))
 
                     Capsule()
-                        .fill(Color(red: 0.04, green: 0.08, blue: 0.14))
+                        .fill(fillColor)
                         .frame(width: proxy.size.width * fillFraction)
                 }
             }
-            .frame(height: 13)
+            .frame(height: 7)
 
             HStack(alignment: .firstTextBaseline) {
                 Text(verbatim: leadingText)

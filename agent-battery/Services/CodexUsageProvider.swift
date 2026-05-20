@@ -229,6 +229,21 @@ struct CodexUsageProvider {
     }
 
     private func rolloutFiles(from rootURL: URL) throws -> [RolloutFile] {
+        var files = try rolloutFiles(in: rootURL)
+
+        if rootURL.lastPathComponent == "sessions",
+           let codexHomeURL = codexHomeURL(from: rootURL) {
+            let archivedURL = codexHomeURL.appendingPathComponent("archived_sessions")
+            files.append(contentsOf: try rolloutFiles(in: archivedURL))
+        }
+
+        var seenPaths = Set<String>()
+        return files
+            .filter { seenPaths.insert($0.url.path).inserted }
+            .sorted { $0.modifiedAt > $1.modifiedAt }
+    }
+
+    private func rolloutFiles(in rootURL: URL) throws -> [RolloutFile] {
         var isDirectory: ObjCBool = false
         guard FileManager.default.fileExists(atPath: rootURL.path, isDirectory: &isDirectory) else {
             return []
@@ -269,9 +284,7 @@ struct CodexUsageProvider {
             files.append((fileURL, modifiedAt))
         }
 
-        return files
-            .sorted { $0.modifiedAt > $1.modifiedAt }
-            .map { RolloutFile(url: $0.url, modifiedAt: $0.modifiedAt) }
+        return files.map { RolloutFile(url: $0.url, modifiedAt: $0.modifiedAt) }
     }
 
     private func parseLatestRateLimitEvent(from url: URL) throws -> ParsedRateLimitEvent? {
@@ -399,6 +412,7 @@ struct CodexUsageProvider {
 
     private func tokenUsage(from url: URL, in interval: DateInterval) throws -> Int? {
         let text = try String(contentsOf: url, encoding: .utf8)
+        var firstDuringInterval: TokenUsageSample?
         var lastBeforeInterval: Int?
         var lastDuringInterval: Int?
 
@@ -413,6 +427,10 @@ struct CodexUsageProvider {
             if sample.date < interval.start {
                 lastBeforeInterval = sample.totalTokens
             } else {
+                if firstDuringInterval == nil {
+                    firstDuringInterval = sample
+                }
+
                 lastDuringInterval = sample.totalTokens
             }
         }
@@ -421,7 +439,13 @@ struct CodexUsageProvider {
             return nil
         }
 
-        return max(0, lastDuringInterval - (lastBeforeInterval ?? 0))
+        let baseline = lastBeforeInterval
+            ?? firstDuringInterval.flatMap { sample in
+                sample.lastTokens.map { max(0, sample.totalTokens - $0) }
+            }
+            ?? 0
+
+        return max(0, lastDuringInterval - baseline)
     }
 
     private func parseTokenUsageSample(from line: String) -> TokenUsageSample? {
@@ -438,8 +462,13 @@ struct CodexUsageProvider {
             return nil
         }
 
+        let lastTokenUsage = info["last_token_usage"] as? [String: Any]
         let sampleDate = date(from: object["timestamp"]) ?? .distantPast
-        return TokenUsageSample(date: sampleDate, totalTokens: totalTokens)
+        return TokenUsageSample(
+            date: sampleDate,
+            totalTokens: totalTokens,
+            lastTokens: lastTokenUsage.flatMap { tokenTotal(from: $0) }
+        )
     }
 
     private func parseSlots(_ rateLimits: [String: Any]) -> (
@@ -568,6 +597,7 @@ private struct ParsedRateLimitEvent {
 private struct TokenUsageSample {
     let date: Date
     let totalTokens: Int
+    let lastTokens: Int?
 }
 
 private extension String {

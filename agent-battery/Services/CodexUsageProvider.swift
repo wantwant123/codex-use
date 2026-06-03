@@ -33,6 +33,7 @@ struct CodexUsageProvider {
             var latestEvent = loggedEvent
             for rollout in rolloutURLs.prefix(maxRolloutFilesToScan) {
                 if let latestEvent,
+                   latestEvent.isComplete,
                    latestEvent.updatedAt != .distantPast,
                    rollout.modifiedAt < latestEvent.updatedAt {
                     break
@@ -42,9 +43,7 @@ struct CodexUsageProvider {
                     continue
                 }
 
-                if latestEvent == nil || event.updatedAt > latestEvent!.updatedAt {
-                    latestEvent = event
-                }
+                latestEvent = latestEvent.map { mergedRateLimitEvent($0, with: event) } ?? event
             }
 
             guard let latestEvent else {
@@ -380,6 +379,22 @@ struct CodexUsageProvider {
         )
     }
 
+    private func mergedRateLimitEvent(
+        _ current: ParsedRateLimitEvent,
+        with candidate: ParsedRateLimitEvent
+    ) -> ParsedRateLimitEvent {
+        let newer = candidate.updatedAt >= current.updatedAt ? candidate : current
+        let older = candidate.updatedAt >= current.updatedAt ? current : candidate
+
+        return ParsedRateLimitEvent(
+            fiveHourRemainingPercent: newer.fiveHourRemainingPercent ?? older.fiveHourRemainingPercent,
+            weeklyRemainingPercent: newer.weeklyRemainingPercent ?? older.weeklyRemainingPercent,
+            fiveHourResetAt: newer.fiveHourResetAt ?? older.fiveHourResetAt,
+            weeklyResetAt: newer.weeklyResetAt ?? older.weeklyResetAt,
+            updatedAt: newer.updatedAt
+        )
+    }
+
     private func tokenUsage(
         from rolloutURLs: [RolloutFile],
         in interval: DateInterval?
@@ -493,7 +508,14 @@ struct CodexUsageProvider {
             let windowMinutes = number(slot["window_minutes"])
                 ?? number(slot["limit_window_seconds"]).map { $0 / 60 }
 
+            if let windowMinutes, windowMinutes <= 0 {
+                continue
+            }
+
             if let windowMinutes, windowMinutes <= 300 {
+                fiveHourRemaining = remaining
+                fiveHourResetAt = resetAt
+            } else if windowMinutes == nil, key == "primary" {
                 fiveHourRemaining = remaining
                 fiveHourResetAt = resetAt
             } else {
@@ -592,6 +614,10 @@ private struct ParsedRateLimitEvent {
     let fiveHourResetAt: Date?
     let weeklyResetAt: Date?
     let updatedAt: Date
+
+    var isComplete: Bool {
+        fiveHourRemainingPercent != nil && weeklyRemainingPercent != nil
+    }
 }
 
 private struct TokenUsageSample {

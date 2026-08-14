@@ -177,6 +177,8 @@ struct CodexUsageProvider {
             weeklyRemainingPercent: parsed.weeklyRemaining,
             fiveHourResetAt: parsed.fiveHourResetAt,
             weeklyResetAt: parsed.weeklyResetAt,
+            hasFiveHourWindow: parsed.hasFiveHourWindow,
+            hasWeeklyWindow: parsed.hasWeeklyWindow,
             updatedAt: updatedAt
         )
     }
@@ -346,6 +348,8 @@ struct CodexUsageProvider {
                 weeklyRemainingPercent: parsed.weeklyRemaining,
                 fiveHourResetAt: parsed.fiveHourResetAt,
                 weeklyResetAt: parsed.weeklyResetAt,
+                hasFiveHourWindow: parsed.hasFiveHourWindow,
+                hasWeeklyWindow: parsed.hasWeeklyWindow,
                 updatedAt: updatedAt ?? .distantPast
             )
         }
@@ -387,10 +391,20 @@ struct CodexUsageProvider {
         let older = candidate.updatedAt >= current.updatedAt ? current : candidate
 
         return ParsedRateLimitEvent(
-            fiveHourRemainingPercent: newer.fiveHourRemainingPercent ?? older.fiveHourRemainingPercent,
-            weeklyRemainingPercent: newer.weeklyRemainingPercent ?? older.weeklyRemainingPercent,
-            fiveHourResetAt: newer.fiveHourResetAt ?? older.fiveHourResetAt,
-            weeklyResetAt: newer.weeklyResetAt ?? older.weeklyResetAt,
+            fiveHourRemainingPercent: newer.hasFiveHourWindow
+                ? newer.fiveHourRemainingPercent ?? older.fiveHourRemainingPercent
+                : nil,
+            weeklyRemainingPercent: newer.hasWeeklyWindow
+                ? newer.weeklyRemainingPercent ?? older.weeklyRemainingPercent
+                : nil,
+            fiveHourResetAt: newer.hasFiveHourWindow
+                ? newer.fiveHourResetAt ?? older.fiveHourResetAt
+                : nil,
+            weeklyResetAt: newer.hasWeeklyWindow
+                ? newer.weeklyResetAt ?? older.weeklyResetAt
+                : nil,
+            hasFiveHourWindow: newer.hasFiveHourWindow,
+            hasWeeklyWindow: newer.hasWeeklyWindow,
             updatedAt: newer.updatedAt
         )
     }
@@ -490,12 +504,16 @@ struct CodexUsageProvider {
         fiveHourRemaining: Double?,
         weeklyRemaining: Double?,
         fiveHourResetAt: Date?,
-        weeklyResetAt: Date?
+        weeklyResetAt: Date?,
+        hasFiveHourWindow: Bool,
+        hasWeeklyWindow: Bool
     ) {
         var fiveHourRemaining: Double?
         var weeklyRemaining: Double?
         var fiveHourResetAt: Date?
         var weeklyResetAt: Date?
+        var hasFiveHourWindow = false
+        var hasWeeklyWindow = false
 
         for key in ["primary", "secondary"] {
             guard let slot = rateLimits[key] as? [String: Any] else {
@@ -513,18 +531,28 @@ struct CodexUsageProvider {
             }
 
             if let windowMinutes, windowMinutes <= 300 {
+                hasFiveHourWindow = true
                 fiveHourRemaining = remaining
                 fiveHourResetAt = resetAt
             } else if windowMinutes == nil, key == "primary" {
+                hasFiveHourWindow = true
                 fiveHourRemaining = remaining
                 fiveHourResetAt = resetAt
             } else {
+                hasWeeklyWindow = true
                 weeklyRemaining = remaining
                 weeklyResetAt = resetAt
             }
         }
 
-        return (fiveHourRemaining, weeklyRemaining, fiveHourResetAt, weeklyResetAt)
+        return (
+            fiveHourRemaining,
+            weeklyRemaining,
+            fiveHourResetAt,
+            weeklyResetAt,
+            hasFiveHourWindow,
+            hasWeeklyWindow
+        )
     }
 
     private func inferredEventDate(from rateLimits: [String: Any]) -> Date? {
@@ -613,10 +641,14 @@ private struct ParsedRateLimitEvent {
     let weeklyRemainingPercent: Double?
     let fiveHourResetAt: Date?
     let weeklyResetAt: Date?
+    let hasFiveHourWindow: Bool
+    let hasWeeklyWindow: Bool
     let updatedAt: Date
 
     var isComplete: Bool {
-        fiveHourRemainingPercent != nil && weeklyRemainingPercent != nil
+        (hasFiveHourWindow || hasWeeklyWindow)
+            && (!hasFiveHourWindow || fiveHourRemainingPercent != nil)
+            && (!hasWeeklyWindow || weeklyRemainingPercent != nil)
     }
 }
 

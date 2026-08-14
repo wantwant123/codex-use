@@ -55,6 +55,7 @@ struct AgentBatteryTests {
         #expect(usageSnapshot(fiveHour: 72, weekly: 9).menuBarRemainingPercent == 9)
         #expect(usageSnapshot(fiveHour: 72, weekly: 10).menuBarRemainingPercent == 72)
         #expect(usageSnapshot(fiveHour: 72, weekly: nil).menuBarRemainingPercent == 72)
+        #expect(usageSnapshot(fiveHour: nil, weekly: 84).menuBarRemainingPercent == 84)
     }
 
     @Test func appSettingsUsesDefaultCodexSessionsPath() throws {
@@ -183,6 +184,49 @@ struct AgentBatteryTests {
         #expect(snapshot.status == .available)
         #expect(snapshot.fiveHourRemainingPercent == 75)
         #expect(snapshot.weeklyRemainingPercent == 90)
+    }
+
+    @Test func codexProviderDoesNotRestoreRetiredFiveHourWindowFromOlderRollout() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: directory)
+        }
+
+        let latestRollout = directory.appendingPathComponent("rollout-latest-weekly-only.jsonl")
+        let olderRollout = directory.appendingPathComponent("rollout-older-five-hour.jsonl")
+
+        try weeklyOnlyCodexLine(
+            timestamp: "2026-04-29T12:00:00Z",
+            weeklyUsed: 16
+        ).write(to: latestRollout, atomically: true, encoding: .utf8)
+        try codexLine(
+            timestamp: "2026-04-29T10:00:00Z",
+            fiveHourUsed: 0,
+            weeklyUsed: 15
+        ).write(to: olderRollout, atomically: true, encoding: .utf8)
+
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date()],
+            ofItemAtPath: latestRollout.path
+        )
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -60)],
+            ofItemAtPath: olderRollout.path
+        )
+
+        let snapshot = CodexUsageProvider().fetch(
+            configuration: UsageDataConfiguration(
+                codexSessionsPath: directory.path,
+                staleInterval: .greatestFiniteMagnitude
+            )
+        )
+
+        #expect(snapshot.status == .available)
+        #expect(snapshot.fiveHourRemainingPercent == nil)
+        #expect(snapshot.weeklyRemainingPercent == 84)
+        #expect(snapshot.menuBarRemainingPercent == 84)
     }
 
     @Test func codexProviderParsesFractionalSecondTimestamps() throws {
@@ -368,6 +412,13 @@ struct AgentBatteryTests {
     ) -> String {
         """
         {"timestamp":"\(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{},"rate_limits":{"limit_id":"codex","primary":{"used_percent":\(fiveHourUsed),"window_minutes":300,"resets_at":\(Int(fiveHourResetsAt.timeIntervalSince1970))},"secondary":{"used_percent":\(weeklyUsed),"window_minutes":10080,"resets_at":\(Int(weeklyResetsAt.timeIntervalSince1970))},"plan_type":"plus"}}}
+
+        """
+    }
+
+    private func weeklyOnlyCodexLine(timestamp: String, weeklyUsed: Double) -> String {
+        """
+        {"timestamp":"\(timestamp)","type":"event_msg","payload":{"type":"token_count","info":{},"rate_limits":{"limit_id":"codex","primary":{"used_percent":\(weeklyUsed),"window_minutes":10080,"resets_at":1777996864},"secondary":null,"plan_type":"prolite"}}}
 
         """
     }

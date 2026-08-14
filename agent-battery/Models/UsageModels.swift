@@ -126,7 +126,7 @@ extension UsageSnapshot {
             return weeklyRemainingPercent
         }
 
-        return fiveHourRemainingPercent
+        return fiveHourRemainingPercent ?? weeklyRemainingPercent
     }
 }
 

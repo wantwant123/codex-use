@@ -55,23 +55,56 @@ struct UsageToolCardView: View {
 
     private var quotaRows: some View {
         VStack(alignment: .leading, spacing: 10) {
-            UsageBarRow(
-                title: "usage.session",
-                dotColor: remainingColor(snapshot.fiveHourRemainingPercent),
-                fillColor: remainingColor(snapshot.fiveHourRemainingPercent),
-                fillFraction: fraction(fromPercent: snapshot.fiveHourRemainingPercent),
-                leadingText: percentLeftText(snapshot.fiveHourRemainingPercent),
-                trailingText: resetText(snapshot.fiveHourResetAt)
-            )
+            if snapshot.hasFiveHourQuota {
+                UsageBarRow(
+                    title: "usage.fiveHourRemaining",
+                    dotColor: remainingColor(snapshot.fiveHourRemainingPercent),
+                    fillColor: remainingColor(snapshot.fiveHourRemainingPercent),
+                    fillFraction: fraction(fromPercent: snapshot.fiveHourRemainingPercent),
+                    leadingText: percentLeftText(snapshot.fiveHourRemainingPercent),
+                    trailingText: resetText(snapshot.fiveHourResetAt)
+                )
+            }
 
-            UsageBarRow(
-                title: "usage.weeklyRemaining",
-                dotColor: remainingColor(snapshot.weeklyRemainingPercent),
-                fillColor: remainingColor(snapshot.weeklyRemainingPercent),
-                fillFraction: fraction(fromPercent: snapshot.weeklyRemainingPercent),
-                leadingText: percentLeftText(snapshot.weeklyRemainingPercent),
-                trailingText: resetText(snapshot.weeklyResetAt)
-            )
+            if snapshot.hasWeeklyQuota {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("usage.weeklyRemaining")
+                            .font(.headline)
+                        Spacer()
+                        Text(verbatim: UsageFormatters.percentText(snapshot.weeklyRemainingPercent))
+                            .font(.system(size: 32, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                    }
+
+                    QuotaBatteryView(
+                        percent: snapshot.weeklyRemainingPercent,
+                        color: remainingColor(snapshot.weeklyRemainingPercent)
+                    )
+                    .accessibilityHidden(true)
+
+                    Text(verbatim: resetText(snapshot.weeklyResetAt))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if !snapshot.hasFiveHourQuota {
+                        Text("usage.weeklyOnly")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(14)
+                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18)
+                        .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+                )
+            }
+
+            if !snapshot.hasFiveHourQuota && !snapshot.hasWeeklyQuota {
+                Text("usage.quotaUnavailable")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -79,6 +112,9 @@ struct UsageToolCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("usage.tokenUsage")
                 .font(.headline)
+            Text("usage.localTokenUsageHint")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             ForEach(tokenMetrics) { metric in
                 UsageBarRow(
@@ -94,10 +130,13 @@ struct UsageToolCardView: View {
     }
 
     private var footer: some View {
-        HStack {
-            Text(verbatim: UsageFormatters.updatedText(lastRefreshAt))
-            Spacer()
-            Text(String(format: NSLocalizedString("usage.nextUpdate", comment: ""), refreshInterval.title))
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: UsageFormatters.updatedText(snapshot.updatedAt))
+            HStack {
+                Text(String(format: NSLocalizedString("usage.lastChecked", comment: ""), lastRefreshAt?.formatted(date: .omitted, time: .shortened) ?? "—"))
+                Spacer()
+                Text(String(format: NSLocalizedString("usage.nextUpdate", comment: ""), refreshInterval.title))
+            }
         }
         .font(.caption)
         .foregroundStyle(.secondary)
@@ -143,6 +182,10 @@ struct UsageToolCardView: View {
     private func resetText(_ date: Date?) -> String {
         guard let date else {
             return String(localized: "usage.resetUnknown")
+        }
+
+        guard date > Date() else {
+            return String(localized: "usage.resetPending")
         }
 
         let countdown = UsageFormatters.resetCountdownText(until: date)

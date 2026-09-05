@@ -157,7 +157,8 @@ struct CodexUsageProvider {
             let data = jsonText.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             object["type"] as? String == "codex.rate_limits",
-            let rateLimits = object["rate_limits"] as? [String: Any]
+            let rateLimits = object["rate_limits"] as? [String: Any],
+            isCodexLimit(rateLimits)
         else {
             return nil
         }
@@ -332,7 +333,8 @@ struct CodexUsageProvider {
                 object["type"] as? String == "event_msg",
                 let payload = object["payload"] as? [String: Any],
                 payload["type"] as? String == "token_count",
-                let rateLimits = payload["rate_limits"] as? [String: Any]
+                let rateLimits = payload["rate_limits"] as? [String: Any],
+                isCodexLimit(rateLimits)
             else {
                 continue
             }
@@ -387,26 +389,16 @@ struct CodexUsageProvider {
         _ current: ParsedRateLimitEvent,
         with candidate: ParsedRateLimitEvent
     ) -> ParsedRateLimitEvent {
-        let newer = candidate.updatedAt >= current.updatedAt ? candidate : current
-        let older = candidate.updatedAt >= current.updatedAt ? current : candidate
+        // Each event is a complete snapshot of its windows. Mixing older values
+        // with a newer reset time would present data that was never observed.
+        candidate.updatedAt >= current.updatedAt ? candidate : current
+    }
 
-        return ParsedRateLimitEvent(
-            fiveHourRemainingPercent: newer.hasFiveHourWindow
-                ? newer.fiveHourRemainingPercent ?? older.fiveHourRemainingPercent
-                : nil,
-            weeklyRemainingPercent: newer.hasWeeklyWindow
-                ? newer.weeklyRemainingPercent ?? older.weeklyRemainingPercent
-                : nil,
-            fiveHourResetAt: newer.hasFiveHourWindow
-                ? newer.fiveHourResetAt ?? older.fiveHourResetAt
-                : nil,
-            weeklyResetAt: newer.hasWeeklyWindow
-                ? newer.weeklyResetAt ?? older.weeklyResetAt
-                : nil,
-            hasFiveHourWindow: newer.hasFiveHourWindow,
-            hasWeeklyWindow: newer.hasWeeklyWindow,
-            updatedAt: newer.updatedAt
-        )
+    private func isCodexLimit(_ rateLimits: [String: Any]) -> Bool {
+        guard let limitID = rateLimits["limit_id"] as? String else {
+            return true // Older Codex events did not include an identifier.
+        }
+        return limitID == "codex"
     }
 
     private func tokenUsage(

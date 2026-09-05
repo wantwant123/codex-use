@@ -60,7 +60,7 @@ final class UsageStore: ObservableObject {
 
     func level(for snapshot: UsageSnapshot) -> UsageLevel {
         UsageMath.level(
-            for: snapshot.fiveHourRemainingPercent,
+            for: snapshot.menuBarRemainingPercent,
             warningThreshold: settings.warningThreshold,
             criticalThreshold: settings.criticalThreshold
         )
@@ -115,7 +115,7 @@ final class UsageStore: ObservableObject {
     }
 
     private func resolvedSnapshot(_ newSnapshot: UsageSnapshot, now: Date) -> UsageSnapshot {
-        let projectedSnapshot = newSnapshot.projectingElapsedResets(now: now)
+        let projectedSnapshot = newSnapshot.markingElapsedResetsStale(now: now)
         if projectedSnapshot.hasUsageValues {
             snapshotCache.store(projectedSnapshot, now: now)
             return projectedSnapshot
@@ -144,7 +144,7 @@ final class UsageStore: ObservableObject {
         }
 
         return previous
-            .projectingElapsedResets(now: now)
+            .markingElapsedResetsStale(now: now)
             .replacingStatus(
                 .stale,
                 message: fallbackMessage(from: newSnapshot)

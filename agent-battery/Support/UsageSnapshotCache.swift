@@ -15,11 +15,11 @@ struct UsageSnapshotCache {
             return nil
         }
 
-        return snapshot.projectingElapsedResets(now: now)
+        return snapshot.markingElapsedResetsStale(now: now)
     }
 
     func store(_ snapshot: UsageSnapshot, now: Date = Date()) {
-        let projected = snapshot.projectingElapsedResets(now: now)
+        let projected = snapshot.markingElapsedResetsStale(now: now)
         guard projected.hasUsageValues,
               let data = try? encoder.encode(projected) else {
             return
@@ -34,14 +34,11 @@ struct UsageSnapshotCache {
 }
 
 extension UsageSnapshot {
-    private static let fiveHourWindow: TimeInterval = 5 * 60 * 60
-    private static let weeklyWindow: TimeInterval = 7 * 24 * 60 * 60
-
     var hasUsageValues: Bool {
         fiveHourRemainingPercent != nil || weeklyRemainingPercent != nil
     }
 
-    func projectingElapsedResets(now: Date = Date()) -> UsageSnapshot {
+    func markingElapsedResetsStale(now: Date = Date()) -> UsageSnapshot {
         let fiveHourExpired = fiveHourResetAt.map { $0 <= now } ?? false
         let weeklyExpired = weeklyResetAt.map { $0 <= now } ?? false
 
@@ -49,33 +46,7 @@ extension UsageSnapshot {
             return self
         }
 
-        return UsageSnapshot(
-            tool: tool,
-            fiveHourRemainingPercent: fiveHourExpired ? 100 : fiveHourRemainingPercent,
-            weeklyRemainingPercent: weeklyExpired ? 100 : weeklyRemainingPercent,
-            fiveHourResetAt: Self.nextReset(after: now, from: fiveHourResetAt, interval: Self.fiveHourWindow),
-            weeklyResetAt: Self.nextReset(after: now, from: weeklyResetAt, interval: Self.weeklyWindow),
-            dailyTokenUsage: dailyTokenUsage,
-            weeklyTokenUsage: weeklyTokenUsage,
-            monthlyTokenUsage: monthlyTokenUsage,
-            updatedAt: updatedAt,
-            status: status,
-            message: message
-        )
-    }
-
-    private static func nextReset(after now: Date, from resetAt: Date?, interval: TimeInterval) -> Date? {
-        guard let resetAt else {
-            return nil
-        }
-
-        guard resetAt <= now else {
-            return resetAt
-        }
-
-        let elapsed = now.timeIntervalSince(resetAt)
-        let elapsedWindows = floor(elapsed / interval) + 1
-        return resetAt.addingTimeInterval(elapsedWindows * interval)
+        return replacingStatus(.stale, message: String(localized: "usage.awaitingReset"))
     }
 
     func replacingStatus(_ status: UsageStatus, message: String?) -> UsageSnapshot {

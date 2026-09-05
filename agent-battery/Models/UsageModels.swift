@@ -118,6 +118,14 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
 }
 
 extension UsageSnapshot {
+    var hasFiveHourQuota: Bool {
+        fiveHourRemainingPercent != nil || fiveHourResetAt != nil
+    }
+
+    var hasWeeklyQuota: Bool {
+        weeklyRemainingPercent != nil || weeklyResetAt != nil
+    }
+
     private static let weeklyMenuBarDisplayThreshold = 10.0
 
     var menuBarRemainingPercent: Double? {

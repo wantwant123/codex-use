@@ -58,6 +58,49 @@ struct AgentBatteryTests {
         #expect(usageSnapshot(fiveHour: nil, weekly: 84).menuBarRemainingPercent == 84)
     }
 
+    @Test func weeklyOnlyQuotaVisibilityAndWarningLevel() {
+        let snapshot = usageSnapshot(fiveHour: nil, weekly: 6)
+        #expect(!snapshot.hasFiveHourQuota)
+        #expect(snapshot.hasWeeklyQuota)
+        #expect(UsageMath.level(for: snapshot.menuBarRemainingPercent, warningThreshold: 40, criticalThreshold: 15) == .critical)
+        #expect(!usageSnapshot(fiveHour: nil, weekly: nil).hasWeeklyQuota)
+        #expect(usageSnapshot(fiveHour: 50, weekly: 80).hasFiveHourQuota)
+    }
+
+    @Test func codexProviderIgnoresOtherLimitBucketsAndKeepsWeeklySnapshot() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let codex = weeklyOnlyCodexLine(timestamp: "2026-09-05T01:00:00Z", weeklyUsed: 94)
+        let other = codexLine(timestamp: "2026-09-05T02:00:00Z", fiveHourUsed: 0, weeklyUsed: 0)
+            .replacingOccurrences(of: "\"limit_id\":\"codex\"", with: "\"limit_id\":\"codex_other\"")
+        try (codex + "\n" + other).write(to: directory.appendingPathComponent("rollout-limits.jsonl"), atomically: true, encoding: .utf8)
+        let snapshot = CodexUsageProvider().fetch(configuration: UsageDataConfiguration(
+            codexSessionsPath: directory.path, staleInterval: .greatestFiniteMagnitude
+        ))
+        #expect(snapshot.fiveHourRemainingPercent == nil)
+        #expect(snapshot.weeklyRemainingPercent == 6)
+    }
+
+    @Test func codexProviderDoesNotCombineNewResetWithOldPercentage() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let older = codexLine(timestamp: "2026-09-05T01:00:00Z", fiveHourUsed: 20, weeklyUsed: 30)
+        let newer = codexLine(timestamp: "2026-09-05T02:00:00Z", fiveHourUsed: 10, weeklyUsed: 5)
+            .replacingOccurrences(of: "\"used_percent\":5.0", with: "\"used_percent\":null")
+        try older.write(to: directory.appendingPathComponent("rollout-old.jsonl"), atomically: true, encoding: .utf8)
+        try newer.write(to: directory.appendingPathComponent("rollout-new.jsonl"), atomically: true, encoding: .utf8)
+        let snapshot = CodexUsageProvider().fetch(configuration: UsageDataConfiguration(
+            codexSessionsPath: directory.path, staleInterval: .greatestFiniteMagnitude
+        ))
+        #expect(snapshot.fiveHourRemainingPercent == 90)
+        #expect(snapshot.weeklyRemainingPercent == nil)
+        #expect(snapshot.hasWeeklyQuota)
+    }
+
     @Test func appSettingsUsesDefaultCodexSessionsPath() throws {
         let suiteName = "agent-battery-tests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -76,7 +119,7 @@ struct AgentBatteryTests {
         #expect(MenuBarDisplayMode.tool.supportsPercentToggle)
     }
 
-    @Test func cachedSnapshotsProjectElapsedResetWindows() throws {
+    @Test func cachedSnapshotsPreserveReadingsAfterResetUntilNewDataArrives() throws {
         let suiteName = "agent-battery-tests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defer {
@@ -110,13 +153,16 @@ struct AgentBatteryTests {
         #expect(beforeReset.dailyTokenUsage == 12_345)
         #expect(beforeReset.weeklyTokenUsage == 45_678)
         #expect(beforeReset.monthlyTokenUsage == 90_123)
-        #expect(afterFiveHourReset.fiveHourRemainingPercent == 100)
-        #expect(afterFiveHourReset.fiveHourResetAt == snapshot.fiveHourResetAt?.addingTimeInterval(5 * 60 * 60))
+        #expect(afterFiveHourReset.fiveHourRemainingPercent == 45)
+        #expect(afterFiveHourReset.fiveHourResetAt == snapshot.fiveHourResetAt)
         #expect(afterFiveHourReset.weeklyRemainingPercent == 60)
         #expect(afterFiveHourReset.weeklyResetAt == snapshot.weeklyResetAt)
-        #expect(afterWeeklyReset.fiveHourRemainingPercent == 100)
-        #expect(afterWeeklyReset.weeklyRemainingPercent == 100)
-        #expect(afterWeeklyReset.weeklyResetAt == snapshot.weeklyResetAt?.addingTimeInterval(2 * 7 * 24 * 60 * 60))
+        #expect(afterWeeklyReset.fiveHourRemainingPercent == 45)
+        #expect(afterWeeklyReset.weeklyRemainingPercent == 60)
+        #expect(afterFiveHourReset.status == .stale)
+        #expect(afterWeeklyReset.status == .stale)
+        #expect(afterWeeklyReset.updatedAt == snapshot.updatedAt)
+        #expect(afterWeeklyReset.weeklyResetAt == snapshot.weeklyResetAt)
     }
 
     @Test func usageHistoryStoreRecordsAndPrunesEntries() throws {
@@ -315,8 +361,11 @@ struct AgentBatteryTests {
 
         #expect(snapshot.status == .available)
         #expect(snapshot.dailyTokenUsage == 380)
-        #expect(snapshot.weeklyTokenUsage == 380)
-        #expect(snapshot.monthlyTokenUsage == 380)
+        // Yesterday's 100 tokens still count when it belongs to this week/month.
+        let weekInterval = try #require(Calendar.current.dateInterval(of: .weekOfYear, for: dayInterval.start))
+        let monthInterval = try #require(Calendar.current.dateInterval(of: .month, for: dayInterval.start))
+        #expect(snapshot.weeklyTokenUsage == (weekInterval.start < dayInterval.start ? 480 : 380))
+        #expect(snapshot.monthlyTokenUsage == (monthInterval.start < dayInterval.start ? 480 : 380))
     }
 
     @Test func codexProviderExpandsTailUntilTokenCountIsFound() throws {
@@ -386,6 +435,7 @@ struct AgentBatteryTests {
         #expect(snapshot.status == .available)
         #expect(snapshot.fiveHourRemainingPercent == 79)
         #expect(snapshot.weeklyRemainingPercent == 66)
+        #expect(store.level(for: usageSnapshot(fiveHour: nil, weekly: 6)) == .critical)
         #expect(history.contains { $0.fiveHourRemainingPercent == 79 && $0.weeklyRemainingPercent == 66 })
     }
 

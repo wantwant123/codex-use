@@ -49,3 +49,21 @@ historyFiveHour:
 historyWeekly:
   en: "Week"
   zh: "每周"
+weeklyOnly:
+  en: "Only a weekly limit is reported for this account"
+  zh: "当前账户仅返回周额度"
+quotaUnavailable:
+  en: "Waiting for quota data"
+  zh: "等待额度数据"
+localTokenUsageHint:
+  en: "Local sessions only · separate from account quota"
+  zh: "仅统计本机会话 · 不代表账户额度消耗"
+awaitingReset:
+  en: "Reset time passed. Showing the last reading until new quota data arrives."
+  zh: "重置时间已过，暂显示最后读数，等待新的额度数据。"
+lastChecked:
+  en: "Checked: %@"
+  zh: "检查：%@"
+resetPending:
+  en: "Awaiting reset confirmation"
+  zh: "等待确认重置"

@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Testing
 @testable import agent_battery
 
@@ -397,6 +398,82 @@ struct AgentBatteryTests {
         #expect(snapshot.status == .available)
         #expect(snapshot.fiveHourRemainingPercent == 88)
         #expect(snapshot.weeklyRemainingPercent == 75)
+    }
+
+    @Test func codexProviderStreamsAcrossChunksAndSkipsOversizedTranscriptLines() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("rollout-large.jsonl")
+        let now = ISO8601DateFormatter().string(from: Date())
+        // Place a token event across a 64 KiB read boundary, then an oversized line.
+        let padding = String(repeating: " ", count: 65_500) + "\n"
+        let first = codexLine(timestamp: now, fiveHourUsed: 10, weeklyUsed: 20, totalTokens: 100)
+        let large = "{\"text\":\"" + String(repeating: "中", count: 800_000) + "\"}\n"
+        let last = codexLine(timestamp: now, fiveHourUsed: 12, weeklyUsed: 24, totalTokens: 150)
+        try (padding + first + large + last.trimmingCharacters(in: .newlines))
+            .write(to: url, atomically: true, encoding: .utf8)
+        let snapshot = CodexUsageProvider().fetch(configuration: UsageDataConfiguration(
+            codexSessionsPath: directory.path, staleInterval: .greatestFiniteMagnitude
+        ))
+        #expect(snapshot.dailyTokenUsage == 150)
+        #expect(snapshot.weeklyTokenUsage == 150)
+        #expect(snapshot.monthlyTokenUsage == 150)
+        #expect(snapshot.weeklyRemainingPercent == 76)
+    }
+
+    @Test func codexProviderInvalidatesTokenCacheAfterAppendTruncateAndDelete() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("rollout-changing.jsonl")
+        let otherURL = directory.appendingPathComponent("rollout-stable.jsonl")
+        let now = ISO8601DateFormatter().string(from: Date())
+        let first = codexLine(timestamp: now, fiveHourUsed: 10, weeklyUsed: 20, totalTokens: 100)
+        try first.write(to: url, atomically: true, encoding: .utf8)
+        try first.write(to: otherURL, atomically: true, encoding: .utf8)
+        let provider = CodexUsageProvider()
+        let configuration = UsageDataConfiguration(codexSessionsPath: directory.path, staleInterval: .greatestFiniteMagnitude)
+        #expect(provider.fetch(configuration: configuration).dailyTokenUsage == 200)
+        #expect(provider.fetch(configuration: configuration).dailyTokenUsage == 200)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(codexLine(timestamp: now, fiveHourUsed: 10, weeklyUsed: 20, totalTokens: 180).utf8))
+        try handle.close()
+        #expect(provider.fetch(configuration: configuration).dailyTokenUsage == 280)
+        try first.write(to: url, atomically: true, encoding: .utf8)
+        #expect(provider.fetch(configuration: configuration).dailyTokenUsage == 200)
+        try FileManager.default.removeItem(at: url)
+        #expect(provider.fetch(configuration: configuration).dailyTokenUsage == 100)
+    }
+
+    @MainActor @Test func usageStoreCoalescesRefreshRequestsWhileBusy() async throws {
+        let suiteName = "agent-battery-tests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agent-battery-tests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        try weeklyOnlyCodexLine(timestamp: ISO8601DateFormatter().string(from: Date()), weeklyUsed: 20)
+            .write(to: directory.appendingPathComponent("rollout-refresh.jsonl"), atomically: true, encoding: .utf8)
+        let settings = AppSettings(defaults: defaults)
+        settings.codexSessionsPath = directory.path
+        let store = UsageStore(settings: settings, snapshotCache: UsageSnapshotCache(defaults: defaults), historyStore: UsageHistoryStore(defaults: defaults))
+        var completions = 0
+        let observer = store.$lastRefreshAt.compactMap { $0 }.sink { _ in completions += 1 }
+        defer { observer.cancel() }
+        for _ in 0..<100 { store.refresh() }
+        let deadline = Date().addingTimeInterval(2)
+        while completions < 2 && Date() < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(completions == 2)
     }
 
     @Test func usageStoreFetchesLatestCodexUsageOnStartup() async throws {

@@ -1,12 +1,19 @@
 import Foundation
 import SQLite3
 
-struct CodexUsageProvider {
-    private let tailChunkBytes = 1_048_576
+final class CodexUsageProvider {
+    private let readChunkBytes = 65_536
+    // Quota/token events are small; skip oversized transcript or tool-output lines.
+    private let maxEventLineBytes = 1_048_576
+    private let tokenCountMarker = Data("\"token_count\"".utf8)
+    private let fetchLock = NSLock()
+    private var tokenUsageCache: [URL: CachedTokenUsage] = [:]
     private let maxRolloutFilesToScan = 80
     private let loggedRateLimitMarker = "\"type\":\"codex.rate_limits\""
 
     func fetch(configuration: UsageDataConfiguration) -> UsageSnapshot {
+        fetchLock.lock()
+        defer { fetchLock.unlock() }
         let path = NSString(string: configuration.codexSessionsPath).expandingTildeInPath
         let rootURL = URL(fileURLWithPath: path)
 
@@ -55,15 +62,17 @@ struct CodexUsageProvider {
 
             let now = Date()
             let calendar = Calendar.current
-            let dailyTokenUsage = try tokenUsage(from: rolloutURLs, in: calendar.dateInterval(of: .day, for: now))
-            let weeklyTokenUsage = try tokenUsage(from: rolloutURLs, in: calendar.dateInterval(of: .weekOfYear, for: now))
-            let monthlyTokenUsage = try tokenUsage(from: rolloutURLs, in: calendar.dateInterval(of: .month, for: now))
+            let tokenUsage = try tokenUsage(from: rolloutURLs, intervals: [
+                calendar.dateInterval(of: .day, for: now),
+                calendar.dateInterval(of: .weekOfYear, for: now),
+                calendar.dateInterval(of: .month, for: now),
+            ])
 
             return snapshot(
                 from: latestEvent,
-                dailyTokenUsage: dailyTokenUsage,
-                weeklyTokenUsage: weeklyTokenUsage,
-                monthlyTokenUsage: monthlyTokenUsage,
+                dailyTokenUsage: tokenUsage[0],
+                weeklyTokenUsage: tokenUsage[1],
+                monthlyTokenUsage: tokenUsage[2],
                 staleInterval: configuration.staleInterval
             )
         } catch {
@@ -290,73 +299,69 @@ struct CodexUsageProvider {
     }
 
     private func parseLatestRateLimitEvent(from url: URL) throws -> ParsedRateLimitEvent? {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer {
-            try? handle.close()
-        }
-
-        let size = try handle.seekToEnd()
-        var offset = size
-        var tail = Data()
-
-        while offset > 0 {
-            let readSize = min(UInt64(tailChunkBytes), offset)
-            offset -= readSize
-            try handle.seek(toOffset: offset)
-
-            guard let chunk = try handle.read(upToCount: Int(readSize)), !chunk.isEmpty else {
-                continue
-            }
-
-            var expandedTail = Data(capacity: chunk.count + tail.count)
-            expandedTail.append(chunk)
-            expandedTail.append(tail)
-            tail = expandedTail
-
-            let text = String(decoding: tail, as: UTF8.self)
-            if let event = parseLatestRateLimitEvent(from: text, fileURL: url) {
-                return event
-            }
-        }
-
-        return nil
-    }
-
-    private func parseLatestRateLimitEvent(
-        from text: String,
-        fileURL: URL
-    ) -> ParsedRateLimitEvent? {
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
+        var latest: ParsedRateLimitEvent?
+        try forEachTokenEventLine(in: url) { data in
             guard
-                let data = String(rawLine).data(using: .utf8),
                 let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                 object["type"] as? String == "event_msg",
                 let payload = object["payload"] as? [String: Any],
                 payload["type"] as? String == "token_count",
                 let rateLimits = payload["rate_limits"] as? [String: Any],
                 isCodexLimit(rateLimits)
-            else {
-                continue
-            }
+            else { return }
 
             let parsed = parseSlots(rateLimits)
-            guard parsed.fiveHourRemaining != nil || parsed.weeklyRemaining != nil else {
-                continue
-            }
-
-            let updatedAt = date(from: object["timestamp"]) ?? modificationDate(for: fileURL)
-            return ParsedRateLimitEvent(
+            guard parsed.fiveHourRemaining != nil || parsed.weeklyRemaining != nil else { return }
+            latest = ParsedRateLimitEvent(
                 fiveHourRemainingPercent: parsed.fiveHourRemaining,
                 weeklyRemainingPercent: parsed.weeklyRemaining,
                 fiveHourResetAt: parsed.fiveHourResetAt,
                 weeklyResetAt: parsed.weeklyResetAt,
                 hasFiveHourWindow: parsed.hasFiveHourWindow,
                 hasWeeklyWindow: parsed.hasWeeklyWindow,
-                updatedAt: updatedAt ?? .distantPast
+                updatedAt: date(from: object["timestamp"]) ?? modificationDate(for: url) ?? .distantPast
             )
         }
+        return latest
+    }
 
-        return nil
+    private func forEachTokenEventLine(in url: URL, consume: (Data) -> Void) throws {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        var line = Data()
+        var skippingOversizedLine = false
+
+        func finishLine() {
+            if !skippingOversizedLine, line.range(of: tokenCountMarker) != nil {
+                autoreleasepool { consume(line) }
+            }
+            line.removeAll(keepingCapacity: true)
+            skippingOversizedLine = false
+        }
+
+        while let chunk = try autoreleasepool(invoking: { try handle.read(upToCount: readChunkBytes) }), !chunk.isEmpty {
+            var start = chunk.startIndex
+            while start < chunk.endIndex {
+                let newline = chunk[start...].firstIndex(of: 10)
+                let end = newline ?? chunk.endIndex
+                if !skippingOversizedLine {
+                    if line.count + end - start <= maxEventLineBytes {
+                        line.append(contentsOf: chunk[start..<end])
+                    } else {
+                        line.removeAll(keepingCapacity: true)
+                        skippingOversizedLine = true
+                    }
+                }
+                if let newline {
+                    finishLine()
+                    start = newline + 1
+                } else {
+                    break
+                }
+            }
+        }
+        // A complete final JSON object need not have a trailing newline.
+        finishLine()
     }
 
     private func snapshot(
@@ -401,77 +406,48 @@ struct CodexUsageProvider {
         return limitID == "codex"
     }
 
-    private func tokenUsage(
-        from rolloutURLs: [RolloutFile],
-        in interval: DateInterval?
-    ) throws -> Int? {
-        guard let interval else {
-            return nil
-        }
+    private func tokenUsage(from rollouts: [RolloutFile], intervals: [DateInterval?]) throws -> [Int?] {
+        let earliestStart = intervals.compactMap { $0?.start }.min() ?? .distantFuture
+        let relevant = rollouts.filter { $0.modifiedAt >= earliestStart }
+        let paths = Set(relevant.map(\.url))
+        tokenUsageCache = tokenUsageCache.filter { paths.contains($0.key) }
+        var totals = [Int?](repeating: nil, count: intervals.count)
 
-        return try tokenUsage(from: rolloutURLs, in: interval)
-    }
-
-    private func tokenUsage(
-        from rolloutURLs: [RolloutFile],
-        in interval: DateInterval
-    ) throws -> Int? {
-        var total = 0
-        var foundUsage = false
-
-        for rollout in rolloutURLs where rollout.modifiedAt >= interval.start {
-            guard let usage = try tokenUsage(from: rollout.url, in: interval) else {
-                continue
-            }
-
-            foundUsage = true
-            total += usage
-        }
-
-        return foundUsage ? total : nil
-    }
-
-    private func tokenUsage(from url: URL, in interval: DateInterval) throws -> Int? {
-        let text = try String(contentsOf: url, encoding: .utf8)
-        var firstDuringInterval: TokenUsageSample?
-        var lastBeforeInterval: Int?
-        var lastDuringInterval: Int?
-
-        for rawLine in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard
-                let sample = parseTokenUsageSample(from: String(rawLine)),
-                sample.date < interval.end
-            else {
-                continue
-            }
-
-            if sample.date < interval.start {
-                lastBeforeInterval = sample.totalTokens
+        for rollout in relevant {
+            let metadata = try rollout.url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+            let values: [Int?]
+            if let cached = tokenUsageCache[rollout.url],
+               cached.modifiedAt == metadata.contentModificationDate,
+               cached.fileSize == metadata.fileSize,
+               cached.intervals == intervals {
+                values = cached.values
             } else {
-                if firstDuringInterval == nil {
-                    firstDuringInterval = sample
+                var accumulators = intervals.map { TokenUsageAccumulator(interval: $0) }
+                try forEachTokenEventLine(in: rollout.url) { data in
+                    guard let sample = parseTokenUsageSample(from: data) else { return }
+                    for index in accumulators.indices {
+                        accumulators[index].record(sample)
+                    }
                 }
-
-                lastDuringInterval = sample.totalTokens
+                values = accumulators.map(\.value)
+                tokenUsageCache[rollout.url] = CachedTokenUsage(
+                    modifiedAt: metadata.contentModificationDate,
+                    fileSize: metadata.fileSize,
+                    intervals: intervals,
+                    values: values
+                )
+            }
+            for index in values.indices {
+                if let value = values[index] {
+                    totals[index] = (totals[index] ?? 0) + value
+                }
             }
         }
-
-        guard let lastDuringInterval else {
-            return nil
-        }
-
-        let baseline = lastBeforeInterval
-            ?? firstDuringInterval.flatMap { sample in
-                sample.lastTokens.map { max(0, sample.totalTokens - $0) }
-            }
-            ?? 0
-
-        return max(0, lastDuringInterval - baseline)
+        return totals
     }
 
-    private func parseTokenUsageSample(from line: String) -> TokenUsageSample? {
+    private func parseTokenUsageSample(from data: Data) -> TokenUsageSample? {
         guard
-            let data = line.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             object["type"] as? String == "event_msg",
             let payload = object["payload"] as? [String: Any],
@@ -662,5 +638,43 @@ private extension String {
         }
 
         return String(self[..<dotIndex] + self[suffixIndex...])
+    }
+}
+
+private struct CachedTokenUsage {
+    let modifiedAt: Date?
+    let fileSize: Int?
+    let intervals: [DateInterval?]
+    let values: [Int?]
+}
+
+private struct TokenUsageAccumulator {
+    let interval: DateInterval?
+    private var firstDuringInterval: TokenUsageSample?
+    private var lastBeforeInterval: Int?
+    private var lastDuringInterval: Int?
+
+    init(interval: DateInterval?) {
+        self.interval = interval
+    }
+
+    mutating func record(_ sample: TokenUsageSample) {
+        guard let interval, sample.date < interval.end else { return }
+        if sample.date < interval.start {
+            lastBeforeInterval = sample.totalTokens
+        } else {
+            if firstDuringInterval == nil { firstDuringInterval = sample }
+            lastDuringInterval = sample.totalTokens
+        }
+    }
+
+    var value: Int? {
+        guard let lastDuringInterval else { return nil }
+        let baseline = lastBeforeInterval
+            ?? firstDuringInterval.flatMap { sample in
+                sample.lastTokens.map { max(0, sample.totalTokens - $0) }
+            }
+            ?? 0
+        return max(0, lastDuringInterval - baseline)
     }
 }

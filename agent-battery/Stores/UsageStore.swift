@@ -13,6 +13,8 @@ final class UsageStore: ObservableObject {
     private let refreshQueue = DispatchQueue(label: "agent-battery.usage-store.refresh", qos: .userInitiated)
     private var refreshTimer: Timer?
     private var didPerformLaunchRefresh = false
+    private var isRefreshing = false
+    private var refreshPending = false
     private var cancellables = Set<AnyCancellable>()
 
     init(
@@ -67,12 +69,20 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh() {
+        // All callers and completion handlers run on the main thread.
+        guard !isRefreshing else {
+            refreshPending = true
+            return
+        }
+        isRefreshing = true
         let configuration = settings.dataConfiguration
 
         refreshQueue.async { [weak self] in
             guard let self else { return }
+            let codexRaw = autoreleasepool {
+                self.codexProvider.fetch(configuration: configuration)
+            }
             let now = Date()
-            let codexRaw = self.codexProvider.fetch(configuration: configuration)
 
             DispatchQueue.main.async {
                 var nextSnapshots = self.snapshots
@@ -83,6 +93,11 @@ final class UsageStore: ObservableObject {
                 self.histories = nextHistories
                 self.snapshots = nextSnapshots
                 self.lastRefreshAt = now
+                self.isRefreshing = false
+                if self.refreshPending {
+                    self.refreshPending = false
+                    self.refresh()
+                }
             }
         }
     }
@@ -94,22 +109,11 @@ final class UsageStore: ObservableObject {
 
         didPerformLaunchRefresh = true
         refresh()
-        scheduleCodexLaunchRefresh()
     }
 
     private func scheduleRefreshTimer() {
         refreshTimer?.invalidate()
         refreshTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(settings.refreshInterval.rawValue), repeats: true) { [weak self] _ in
-            self?.refresh()
-        }
-    }
-
-    private func scheduleCodexLaunchRefresh() {
-        DispatchQueue.main.async { [weak self] in
-            self?.refresh()
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.refresh()
         }
     }

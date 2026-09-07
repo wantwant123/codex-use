@@ -11,73 +11,83 @@ final class CodexUsageProvider {
     private let maxRolloutFilesToScan = 80
     private let loggedRateLimitMarker = "\"type\":\"codex.rate_limits\""
 
+    private let readLiveRateLimits: (URL) throws -> [String: Any]
+
+    init(readLiveRateLimits: @escaping (URL) throws -> [String: Any] = {
+        try CodexRateLimitClient().fetch(codexHomeURL: $0)
+    }) {
+        self.readLiveRateLimits = readLiveRateLimits
+    }
+
     func fetch(configuration: UsageDataConfiguration) -> UsageSnapshot {
         fetchLock.lock()
         defer { fetchLock.unlock() }
         let path = NSString(string: configuration.codexSessionsPath).expandingTildeInPath
         let rootURL = URL(fileURLWithPath: path)
 
+        let codexHome = codexHomeURL(from: rootURL)
+        // A user-selected standalone rollout remains an offline data source.
+        let queriesLiveAccount = codexHome.map {
+            rootURL.standardizedFileURL == $0.appendingPathComponent("sessions").standardizedFileURL
+        } ?? false
+        let liveEvent = queriesLiveAccount ? codexHome.flatMap { home in
+            (try? readLiveRateLimits(home)).flatMap { parseLiveRateLimitEvent($0) }
+        } : nil
+        var latestEvent = liveEvent
+
+        func result(from event: ParsedRateLimitEvent, tokens: [Int?]) -> UsageSnapshot {
+            let value = snapshot(from: event, dailyTokenUsage: tokens[0], weeklyTokenUsage: tokens[1],
+                                 monthlyTokenUsage: tokens[2], staleInterval: configuration.staleInterval)
+            return queriesLiveAccount && liveEvent == nil
+                ? value.replacingStatus(.stale, message: String(localized: "provider.liveQuotaUnavailable"))
+                : value
+        }
+
         do {
-            let loggedEvent = latestLoggedRateLimitEvent(codexHomeURL: codexHomeURL(from: rootURL))
+            if liveEvent == nil {
+                latestEvent = latestLoggedRateLimitEvent(codexHomeURL: codexHome)
+            }
             let rolloutURLs = try rolloutFiles(from: rootURL)
-            guard !rolloutURLs.isEmpty else {
-                if let loggedEvent {
-                    return snapshot(
-                        from: loggedEvent,
-                        dailyTokenUsage: nil,
-                        weeklyTokenUsage: nil,
-                        monthlyTokenUsage: nil,
-                        staleInterval: configuration.staleInterval
-                    )
+            if liveEvent == nil {
+                for rollout in rolloutURLs.prefix(maxRolloutFilesToScan) {
+                    if let latestEvent, latestEvent.isComplete,
+                       latestEvent.updatedAt != .distantPast, rollout.modifiedAt < latestEvent.updatedAt { break }
+                    guard let event = try parseLatestRateLimitEvent(from: rollout.url) else { continue }
+                    latestEvent = latestEvent.map { mergedRateLimitEvent($0, with: event) } ?? event
                 }
-
-                return .unavailable(
-                    tool: .codex,
-                    message: String(format: NSLocalizedString("provider.codexNoRollouts", comment: ""), configuration.codexSessionsPath)
-                )
             }
-
-            var latestEvent = loggedEvent
-            for rollout in rolloutURLs.prefix(maxRolloutFilesToScan) {
-                if let latestEvent,
-                   latestEvent.isComplete,
-                   latestEvent.updatedAt != .distantPast,
-                   rollout.modifiedAt < latestEvent.updatedAt {
-                    break
-                }
-
-                guard let event = try parseLatestRateLimitEvent(from: rollout.url) else {
-                    continue
-                }
-
-                latestEvent = latestEvent.map { mergedRateLimitEvent($0, with: event) } ?? event
-            }
-
             guard let latestEvent else {
-                return .unavailable(
-                    tool: .codex,
-                    message: String(localized: "provider.codexNoEvent")
-                )
+                return .unavailable(tool: .codex, message: String(localized: queriesLiveAccount
+                    ? "provider.liveQuotaUnavailable" : "provider.codexNoEvent"))
             }
-
             let now = Date()
             let calendar = Calendar.current
-            let tokenUsage = try tokenUsage(from: rolloutURLs, intervals: [
+            // Local token-history failures must not discard a successful account reading.
+            let tokens = (try? tokenUsage(from: rolloutURLs, intervals: [
                 calendar.dateInterval(of: .day, for: now),
                 calendar.dateInterval(of: .weekOfYear, for: now),
                 calendar.dateInterval(of: .month, for: now),
-            ])
-
-            return snapshot(
-                from: latestEvent,
-                dailyTokenUsage: tokenUsage[0],
-                weeklyTokenUsage: tokenUsage[1],
-                monthlyTokenUsage: tokenUsage[2],
-                staleInterval: configuration.staleInterval
-            )
+            ])) ?? [nil, nil, nil]
+            return result(from: latestEvent, tokens: tokens)
         } catch {
+            if let latestEvent { return result(from: latestEvent, tokens: [nil, nil, nil]) }
             return .error(tool: .codex, message: error.localizedDescription)
         }
+    }
+
+    private func parseLiveRateLimitEvent(_ response: [String: Any]) -> ParsedRateLimitEvent? {
+        guard let limit = CodexRateLimitClient.codexLimit(in: response) else { return nil }
+        let parsed = parseSlots(limit)
+        guard parsed.fiveHourRemaining != nil || parsed.weeklyRemaining != nil else { return nil }
+        return ParsedRateLimitEvent(
+            fiveHourRemainingPercent: parsed.fiveHourRemaining,
+            weeklyRemainingPercent: parsed.weeklyRemaining,
+            fiveHourResetAt: parsed.fiveHourResetAt,
+            weeklyResetAt: parsed.weeklyResetAt,
+            hasFiveHourWindow: parsed.hasFiveHourWindow,
+            hasWeeklyWindow: parsed.hasWeeklyWindow,
+            updatedAt: Date()
+        )
     }
 
     private func codexHomeURL(from sessionsURL: URL) -> URL? {
@@ -106,7 +116,7 @@ final class CodexUsageProvider {
         defer { sqlite3_close(database) }
 
         let query = """
-            SELECT feedback_log_body
+            SELECT feedback_log_body, ts, ts_nanos
             FROM logs
             WHERE feedback_log_body LIKE '%"type":"codex.rate_limits"%'
             ORDER BY ts DESC, ts_nanos DESC
@@ -125,7 +135,9 @@ final class CodexUsageProvider {
             }
 
             let text = String(cString: textPointer)
-            if let event = parseLatestLoggedRateLimitEvent(from: text, fileURL: url) {
+            let recordedAt = Date(timeIntervalSince1970: sqlite3_column_double(statement, 1)
+                + sqlite3_column_double(statement, 2) / 1_000_000_000)
+            if let event = parseLatestLoggedRateLimitEvent(from: text, recordedAt: recordedAt) {
                 return event
             }
         }
@@ -135,7 +147,7 @@ final class CodexUsageProvider {
 
     private func parseLatestLoggedRateLimitEvent(
         from text: String,
-        fileURL: URL
+        recordedAt: Date
     ) -> ParsedRateLimitEvent? {
         var searchRange = text.startIndex..<text.endIndex
         while let markerRange = text.range(of: loggedRateLimitMarker, options: [.backwards], range: searchRange),
@@ -151,7 +163,7 @@ final class CodexUsageProvider {
             }
 
             let jsonText = String(text[jsonStart..<jsonEnd])
-            guard let event = parseLoggedRateLimitEvent(from: jsonText, fileURL: fileURL) else {
+            guard let event = parseLoggedRateLimitEvent(from: jsonText, recordedAt: recordedAt) else {
                 continue
             }
 
@@ -161,7 +173,7 @@ final class CodexUsageProvider {
         return nil
     }
 
-    private func parseLoggedRateLimitEvent(from jsonText: String, fileURL: URL) -> ParsedRateLimitEvent? {
+    private func parseLoggedRateLimitEvent(from jsonText: String, recordedAt: Date) -> ParsedRateLimitEvent? {
         guard
             let data = jsonText.data(using: .utf8),
             let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -179,8 +191,7 @@ final class CodexUsageProvider {
 
         let updatedAt = date(from: object["timestamp"])
             ?? inferredEventDate(from: rateLimits)
-            ?? modificationDate(for: fileURL)
-            ?? .distantPast
+            ?? recordedAt
 
         return ParsedRateLimitEvent(
             fiveHourRemainingPercent: parsed.fiveHourRemaining,
@@ -488,10 +499,11 @@ final class CodexUsageProvider {
                 continue
             }
 
-            let usedPercent = number(slot["used_percent"]) ?? number(slot["used_percentage"])
+            let usedPercent = number(slot["usedPercent"]) ?? number(slot["used_percent"]) ?? number(slot["used_percentage"])
             let remaining = UsageMath.remainingPercent(fromUsedPercent: usedPercent)
-            let resetAt = date(from: slot["resets_at"]) ?? date(from: slot["reset_at"])
-            let windowMinutes = number(slot["window_minutes"])
+            let resetAt = date(from: slot["resetsAt"]) ?? date(from: slot["resets_at"]) ?? date(from: slot["reset_at"])
+            let windowMinutes = number(slot["windowDurationMins"])
+                ?? number(slot["window_minutes"])
                 ?? number(slot["limit_window_seconds"]).map { $0 / 60 }
 
             if let windowMinutes, windowMinutes <= 0 {
@@ -528,7 +540,7 @@ final class CodexUsageProvider {
 
         for key in ["primary", "secondary"] {
             guard let slot = rateLimits[key] as? [String: Any],
-                  let resetAt = date(from: slot["resets_at"]) ?? date(from: slot["reset_at"]),
+                  let resetAt = date(from: slot["resetsAt"]) ?? date(from: slot["resets_at"]) ?? date(from: slot["reset_at"]),
                   let resetAfterSeconds = number(slot["reset_after_seconds"])
             else {
                 continue

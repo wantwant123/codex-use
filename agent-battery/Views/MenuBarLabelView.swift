@@ -11,7 +11,8 @@ struct MenuBarLabelView: View {
 
     @ViewBuilder
     private func label(for snapshot: UsageSnapshot) -> some View {
-        let percent = UsageFormatters.percentText(snapshot.menuBarRemainingPercent)
+        let percent = (snapshot.status == .stale && snapshot.menuBarRemainingPercent != nil ? "≈" : "")
+            + UsageFormatters.percentText(snapshot.menuBarRemainingPercent)
         let showsPercent = settings.showMenuBarPercent
         let color = labelColor(for: snapshot)
 

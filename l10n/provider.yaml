@@ -4,3 +4,6 @@ codexNoRollouts:
 codexNoEvent:
   en: "No token_count rate_limits event found in recent Codex rollouts."
   zh: "近期 Codex rollout 中未找到 token_count rate_limits 事件。"
+liveQuotaUnavailable:
+  en: "Live quota unavailable. Local readings may be outdated. Check Codex sign-in and connectivity."
+  zh: "实时额度查询失败，本地读数可能过期，请检查 Codex 登录和网络。"

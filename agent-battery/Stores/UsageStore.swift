@@ -120,6 +120,11 @@ final class UsageStore: ObservableObject {
 
     private func resolvedSnapshot(_ newSnapshot: UsageSnapshot, now: Date) -> UsageSnapshot {
         let projectedSnapshot = newSnapshot.markingElapsedResetsStale(now: now)
+        if projectedSnapshot.status == .stale,
+           let cached = snapshotCache.snapshot(for: projectedSnapshot.tool, now: now),
+           (cached.updatedAt ?? .distantPast) > (projectedSnapshot.updatedAt ?? .distantPast) {
+            return cached.replacingStatus(.stale, message: fallbackMessage(from: projectedSnapshot))
+        }
         if projectedSnapshot.hasUsageValues {
             snapshotCache.store(projectedSnapshot, now: now)
             return projectedSnapshot

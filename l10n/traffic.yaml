@@ -1,0 +1,165 @@
+title:
+  en: "Proxy Traffic"
+  zh: "代理流量"
+enabled:
+  en: "Monitor proxy traffic"
+  zh: "监控代理流量"
+showMenuBar:
+  en: "Show speed in menu bar"
+  zh: "菜单栏显示实时网速"
+showQuota:
+  en: "Show quota alongside speed"
+  zh: "同时显示剩余额度"
+controller:
+  en: "Controller address"
+  zh: "控制接口地址"
+secret:
+  en: "API secret (optional)"
+  zh: "接口密钥（可留空）"
+localOnly:
+  en: "Local Clash / Mihomo API. Secrets are saved in Keychain."
+  zh: "本机 Clash / Mihomo 接口，密钥保存到钥匙串。"
+apply:
+  en: "Apply"
+  zh: "应用"
+applied:
+  en: "Saved. A new monitoring session will begin."
+  zh: "已保存，将开始新的监控会话。"
+secretFailed:
+  en: "Could not save the secret to Keychain."
+  zh: "无法将密钥保存到钥匙串。"
+invalidAddress:
+  en: "Use a local address such as http://127.0.0.1:9090."
+  zh: "请填写本机地址，例如 http://127.0.0.1:9090。"
+connecting:
+  en: "Connecting to local proxy…"
+  zh: "正在连接本机代理…"
+baseline:
+  en: "Connected · measuring speed…"
+  zh: "已连接，正在测量速度…"
+live:
+  en: "Live · updates every second"
+  zh: "实时监控中 · 每秒更新"
+disabled:
+  en: "Monitoring is off"
+  zh: "监控已关闭"
+disconnected:
+  en: "Proxy unavailable. Retrying; check the controller address in Settings."
+  zh: "代理不可用，正在重连；可在设置中检查接口地址。"
+unauthorized:
+  en: "API access denied. Check the secret in Settings."
+  zh: "接口鉴权失败，请在设置中检查密钥。"
+oversized:
+  en: "Connection response exceeds the monitoring limit. Retrying."
+  zh: "连接数据超出监控容量，稍后重试。"
+invalidResponse:
+  en: "Unsupported controller response. Check the address in Settings."
+  zh: "接口返回的数据不受支持，请检查设置中的地址。"
+details:
+  en: "Applications & websites"
+  zh: "查看应用与网站流量"
+downloadSpeed:
+  en: "Download speed"
+  zh: "下载速度"
+uploadSpeed:
+  en: "Upload speed"
+  zh: "上传速度"
+downloadTotal:
+  en: "Downloaded"
+  zh: "累计下载"
+uploadTotal:
+  en: "Uploaded"
+  zh: "累计上传"
+download:
+  en: "Download"
+  zh: "下载"
+upload:
+  en: "Upload"
+  zh: "上传"
+since:
+  en: "Monitoring since"
+  zh: "本次监控开始于"
+name:
+  en: "Application / domain"
+  zh: "应用 / 域名"
+apps:
+  en: "Applications"
+  zh: "应用"
+domains:
+  en: "Websites"
+  zh: "网站"
+group:
+  en: "Group by"
+  zh: "分组方式"
+routeLabel:
+  en: "Route"
+  zh: "流向"
+route.all:
+  en: "All"
+  zh: "全部"
+route.proxy:
+  en: "Proxy"
+  zh: "代理"
+route.direct:
+  en: "Direct"
+  zh: "直连"
+route.unknown:
+  en: "Unknown"
+  zh: "未知"
+search:
+  en: "Search names"
+  zh: "搜索名称"
+backApps:
+  en: "Applications"
+  zh: "返回应用"
+appDomains:
+  en: "Show this application's domains"
+  zh: "查看此应用访问的域名"
+empty:
+  en: "No matching traffic sampled yet"
+  zh: "暂未采集到符合条件的流量"
+settings:
+  en: "Settings"
+  zh: "设置"
+newSession:
+  en: "New session"
+  zh: "重新统计"
+unassigned:
+  en: "Unattributed (estimate)"
+  zh: "未归属（估算）"
+sampleNote:
+  en: "Top totals cover all traffic handled by the proxy, including DIRECT. Rankings are sampled and sorted by total bytes; short connections may be missed. Websites represent domains or IPs. Totals reset when monitoring restarts."
+  zh: "顶部总量包含代理处理的直连流量。排行按采样流量累计排序，短连接可能漏记；网站指域名或 IP。重启监控后重新累计。"
+gapNote:
+  en: "Monitoring was interrupted or counters reset. Unobserved intervals are excluded."
+  zh: "监控曾中断或代理计数已重置，未观测时段未计入。"
+limitNote:
+  en: "Detail capacity reached. Further new entries are grouped into Other."
+  zh: "明细已达容量上限，后续新增项目合并到“其他”。"
+other:
+  en: "Other (capacity limit)"
+  zh: "其他（容量上限）"
+unknownApp:
+  en: "Unknown application"
+  zh: "未知应用"
+unknownDomain:
+  en: "Unknown domain"
+  zh: "未知域名"
+history:
+  en: "Recent 5 minutes · all traffic"
+  zh: "最近 5 分钟 · 全部流量"
+filtered:
+  en: "Filtered total · sampled"
+  zh: "当前筛选累计 · 采样统计"
+lastUpdate:
+  en: "Last received"
+  zh: "最后收到数据"
+sessionTotal:
+  en: "Session total"
+  zh: "本次累计"
+time:
+  en: "Time"
+  zh: "时间"
+direction:
+  en: "Direction"
+  zh: "方向"

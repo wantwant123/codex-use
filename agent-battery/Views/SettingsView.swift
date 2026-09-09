@@ -3,6 +3,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
+    @ObservedObject var traffic: ProxyTrafficStore
 
     var body: some View {
         Form {
@@ -29,6 +30,8 @@ struct SettingsView: View {
                     UsageColorBar(settings: settings)
                 }
             }
+
+            ProxyTrafficSettingsView(settings: settings, store: traffic)
 
             Section("settings.sectionRefresh") {
                 Picker("settings.refreshInterval", selection: refreshIntervalSelection) {

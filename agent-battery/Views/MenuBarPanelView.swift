@@ -4,6 +4,8 @@ import SwiftUI
 struct MenuBarPanelView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: UsageStore
+    @ObservedObject var traffic: ProxyTrafficStore
+    @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
 
@@ -16,6 +18,15 @@ struct MenuBarPanelView: View {
                 onSettings: showSettings,
                 onRefresh: store.refresh
             )
+
+            if settings.trafficEnabled {
+                Divider()
+                ProxyTrafficSummaryView(store: traffic) {
+                    dismiss()
+                    openWindow(id: "traffic")
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
 
             Divider()
 

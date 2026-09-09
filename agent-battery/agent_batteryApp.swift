@@ -21,14 +21,7 @@ struct AgentBatteryApp: App {
                     store.refresh()
                 }
         } label: {
-            HStack(spacing: 6) {
-                if !settings.trafficEnabled || !settings.showTrafficInMenuBar || settings.showQuotaWithTraffic {
-                    MenuBarLabelView(settings: settings, store: store)
-                }
-                if settings.trafficEnabled && settings.showTrafficInMenuBar {
-                    ProxyTrafficMenuLabel(store: traffic)
-                }
-            }
+            MenuBarLabelView(settings: settings, store: store, traffic: traffic)
         }
         .menuBarExtraStyle(.window)
 

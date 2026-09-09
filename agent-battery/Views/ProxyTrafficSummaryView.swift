@@ -1,19 +1,5 @@
 import SwiftUI
 
-struct ProxyTrafficMenuLabel: View {
-    @ObservedObject var store: ProxyTrafficStore
-
-    var body: some View {
-        HStack(spacing: 5) {
-            Text(verbatim: "↓ \(TrafficFormat.speed(store.speed?.download))  ↑ \(TrafficFormat.speed(store.speed?.upload))")
-                .monospacedDigit()
-                .font(.system(size: 11))
-                .accessibilityLabel(Text("traffic.title"))
-            ProxyHealthIndicator(health: store.currentHealth)
-        }
-    }
-}
-
 struct ProxyTrafficSummaryView: View {
     @ObservedObject var store: ProxyTrafficStore
     let openDetails: () -> Void

@@ -4,33 +4,57 @@ import SwiftUI
 struct MenuBarLabelView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: UsageStore
+    @ObservedObject var traffic: ProxyTrafficStore
 
     var body: some View {
-        label(for: store.primarySnapshot)
+        // MenuBarExtra extracts images/text instead of hosting arbitrary SwiftUI shapes.
+        // One non-template image also preserves the order: quota, speed, health light.
+        Image(nsImage: renderedImage())
+            .help(settings.trafficEnabled && settings.showTrafficInMenuBar
+                  ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : "")
     }
 
-    @ViewBuilder
-    private func label(for snapshot: UsageSnapshot) -> some View {
+    func renderedImage() -> NSImage {
+        var images: [NSImage] = []
+        let showsTraffic = settings.trafficEnabled && settings.showTrafficInMenuBar
+        if !showsTraffic || settings.showQuotaWithTraffic {
+            images.append(quotaImage(for: store.primarySnapshot))
+        }
+        if showsTraffic {
+            let speed = "↓ \(TrafficFormat.speed(traffic.speed?.download))  ↑ \(TrafficFormat.speed(traffic.speed?.upload))"
+            images.append(MenuBarText.image(text: speed, color: .white))
+            images.append(ProxyHealthIndicator(health: traffic.currentHealth).menuBarImage)
+        }
+        let spacing: CGFloat = 5
+        let size = NSSize(width: images.reduce(0) { $0 + $1.size.width } + spacing * CGFloat(images.count - 1),
+                          height: images.map(\.size.height).max() ?? 14)
+        let image = NSImage(size: size, flipped: false) { _ in
+            var x: CGFloat = 0
+            for part in images {
+                part.draw(at: NSPoint(x: x, y: (size.height - part.size.height) / 2),
+                          from: .zero, operation: .sourceOver, fraction: 1)
+                x += part.size.width + spacing
+            }
+            return true
+        }
+        image.isTemplate = false
+        return image
+    }
+
+    private func quotaImage(for snapshot: UsageSnapshot) -> NSImage {
         let percent = (snapshot.status == .stale && snapshot.menuBarRemainingPercent != nil ? "≈" : "")
             + UsageFormatters.percentText(snapshot.menuBarRemainingPercent)
-        let showsPercent = settings.showMenuBarPercent
         let color = labelColor(for: snapshot)
-
         switch settings.menuBarDisplayMode {
         case .percent:
-            MenuBarText(text: percent, color: color)
+            return MenuBarText.image(text: percent, color: color)
         case .battery:
-            if showsPercent {
-                Image(nsImage: batteryWithPercentImage(snapshot: snapshot, percent: percent, color: color))
-            } else {
-                batteryIcon(snapshot: snapshot)
-            }
+            return settings.showMenuBarPercent
+                ? batteryWithPercentImage(snapshot: snapshot, percent: percent, color: color)
+                : renderedBatteryImage(snapshot: snapshot, height: 12)
         case .tool:
-            if showsPercent {
-                MenuBarText(text: "\(snapshot.tool.shortName) \(percent)", color: color)
-            } else {
-                MenuBarText(text: snapshot.tool.shortName, color: color)
-            }
+            return MenuBarText.image(text: settings.showMenuBarPercent ? "\(snapshot.tool.shortName) \(percent)" : snapshot.tool.shortName,
+                                     color: color)
         }
     }
 
@@ -77,15 +101,8 @@ struct MenuBarLabelView: View {
     }
 }
 
-private struct MenuBarText: View {
-    let text: String
-    let color: Color
-
-    var body: some View {
-        Image(nsImage: renderedImage())
-    }
-
-    private func renderedImage() -> NSImage {
+private enum MenuBarText {
+    static func image(text: String, color: Color) -> NSImage {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.menuBarFont(ofSize: 0),
             .foregroundColor: NSColor(color)

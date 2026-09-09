@@ -84,6 +84,11 @@ struct ProxyTrafficTests {
         #expect(next.rows(domains: true, route: .unknown).first?.bytes.upload == 20)
         #expect(next.rows(domains: true, route: .all, app: "/Applications/Browser.app").first?.bytes.upload == 170)
         #expect(next.rows(domains: true, route: .all, app: "missing").isEmpty)
+        #expect(next.rows(domains: false, route: .all).first?.routes == [.proxy, .direct, .unknown])
+        #expect(next.rows(domains: true, route: .proxy).first?.routes == [.proxy])
+        #expect(next.rows(domains: true, route: .direct).first?.routes == [.direct])
+        #expect(next.rows(domains: true, route: .unknown).first?.routes == [.unknown])
+        #expect(next.rows(domains: true, route: .all, app: "/Applications/Browser.app").first?.routes == [.proxy, .direct, .unknown])
     }
 
     @Test func boundedHistoryAndOverflowRetainByteTotals() {

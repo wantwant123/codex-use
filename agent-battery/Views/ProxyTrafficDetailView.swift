@@ -76,6 +76,12 @@ struct ProxyTrafficDetailView: View {
                 TableColumn("traffic.uploadTotal") { row in
                     Text(verbatim: TrafficFormat.bytes(row.bytes.upload))
                 }
+                TableColumn("traffic.usesProxy") { row in
+                    Text(verbatim: row.routeTitle)
+                        .lineLimit(1)
+                        .help(row.routeTitle)
+                }
+                .width(min: 110, ideal: 170)
             }
             .monospacedDigit()
             .overlay {
@@ -97,7 +103,14 @@ struct ProxyTrafficDetailView: View {
     private var header: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("traffic.title").font(.title2.bold())
+                HStack {
+                    Text("traffic.title").font(.title2.bold())
+                    ProxyHealthIndicator(health: store.currentHealth)
+                    Text(verbatim: store.currentHealth.kind.title).font(.caption).foregroundStyle(.secondary)
+                    if let latency = store.currentHealth.latencyMS {
+                        Text(verbatim: "\(latency) ms").font(.caption).monospacedDigit()
+                    }
+                }
                 Text(LocalizedStringKey(store.statusKey))
                     .font(.caption).foregroundStyle(store.isLive ? Color.secondary : Color.orange)
                 if !store.isLive, let updated = store.snapshot.updatedAt {
@@ -143,6 +156,8 @@ struct ProxyTrafficDetailView: View {
                     .monospacedDigit()
             }
             Text("traffic.sampleNote")
+            Text("traffic.healthNote")
+            if store.storageFailed { Text("traffic.storageFailed").foregroundStyle(.orange) }
             if store.snapshot.hasGaps { Text("traffic.gapNote").foregroundStyle(.orange) }
             if store.snapshot.isLimited { Text("traffic.limitNote") }
         }

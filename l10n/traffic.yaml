@@ -23,8 +23,8 @@ apply:
   en: "Apply"
   zh: "应用"
 applied:
-  en: "Saved. A new monitoring session will begin."
-  zh: "已保存，将开始新的监控会话。"
+  en: "Saved. Reconnecting; today's traffic is retained."
+  zh: "已保存，正在重连并保留今日统计。"
 secretFailed:
   en: "Could not save the secret to Keychain."
   zh: "无法将密钥保存到钥匙串。"
@@ -65,11 +65,11 @@ uploadSpeed:
   en: "Upload speed"
   zh: "上传速度"
 downloadTotal:
-  en: "Downloaded"
-  zh: "累计下载"
+  en: "Downloaded today"
+  zh: "今日下载"
 uploadTotal:
-  en: "Uploaded"
-  zh: "累计上传"
+  en: "Uploaded today"
+  zh: "今日上传"
 download:
   en: "Download"
   zh: "下载"
@@ -77,8 +77,8 @@ upload:
   en: "Upload"
   zh: "上传"
 since:
-  en: "Monitoring since"
-  zh: "本次监控开始于"
+  en: "Observed today since"
+  zh: "今日观测开始于"
 name:
   en: "Application / domain"
   zh: "应用 / 域名"
@@ -122,14 +122,14 @@ settings:
   en: "Settings"
   zh: "设置"
 newSession:
-  en: "New session"
-  zh: "重新统计"
+  en: "Reconnect"
+  zh: "重新连接"
 unassigned:
   en: "Unattributed (estimate)"
   zh: "未归属（估算）"
 sampleNote:
-  en: "Top totals cover all traffic handled by the proxy, including DIRECT. Rankings are sampled and sorted by total bytes; short connections may be missed. Websites represent domains or IPs. Totals reset when monitoring restarts."
-  zh: "顶部总量包含代理处理的直连流量。排行按采样流量累计排序，短连接可能漏记；网站指域名或 IP。重启监控后重新累计。"
+  en: "Today's observed traffic uses local time and survives app restarts. Top totals include DIRECT. Rankings are sampled; short connections may be missed. Websites represent domains or IPs."
+  zh: "按本机日期统计今日已观测流量，重启后继续累计。顶部总量包含直连；排行为采样统计，短连接可能漏记；网站指域名或 IP。"
 gapNote:
   en: "Monitoring was interrupted or counters reset. Unobserved intervals are excluded."
   zh: "监控曾中断或代理计数已重置，未观测时段未计入。"
@@ -149,17 +149,53 @@ history:
   en: "Recent 5 minutes · all traffic"
   zh: "最近 5 分钟 · 全部流量"
 filtered:
-  en: "Filtered total · sampled"
-  zh: "当前筛选累计 · 采样统计"
+  en: "Filtered today · sampled"
+  zh: "当前筛选今日累计 · 采样统计"
 lastUpdate:
   en: "Last received"
   zh: "最后收到数据"
 sessionTotal:
-  en: "Session total"
-  zh: "本次累计"
+  en: "Today total"
+  zh: "今日累计"
 time:
   en: "Time"
   zh: "时间"
 direction:
   en: "Direction"
   zh: "方向"
+usesProxy:
+  en: "Proxy routing"
+  zh: "是否走代理"
+health.checking:
+  en: "Checking proxy…"
+  zh: "正在检查代理…"
+health.healthy:
+  en: "Proxy probe healthy"
+  zh: "代理出口探测正常"
+health.slow:
+  en: "High proxy latency"
+  zh: "代理出口延迟较高"
+health.partial:
+  en: "Some proxy probes failed"
+  zh: "部分代理出口探测失败"
+health.retrying:
+  en: "Proxy probe failed; verifying"
+  zh: "代理出口探测失败，待复核"
+health.failed:
+  en: "Proxy probes failed repeatedly"
+  zh: "代理出口连续探测失败"
+health.unavailable:
+  en: "Local proxy API unavailable"
+  zh: "本地代理接口不可用"
+health.unknown:
+  en: "No active proxy outbound observed"
+  zh: "尚未观测到活动代理出口"
+health.stale:
+  en: "Proxy probe expired; awaiting check"
+  zh: "探测结果已过期，等待检查"
+healthNote:
+  en: "Proxy probes run every 10 seconds for up to 3 active outbounds. Yellow: ≥1500 ms, pending or partial failure. Red: API unavailable or two failed rounds. This does not guarantee every website is reachable."
+  zh: "每 10 秒探测最多 3 个活动代理出口。黄灯：延迟 ≥1500 ms、待确认或部分异常；红灯：接口不可用或连续两轮失败。探测正常不代表所有网站均可访问。"
+storageFailed:
+  en: "Today's traffic could not be saved or restored. Check local disk access."
+  zh: "今日统计保存或读取失败，请检查本地磁盘访问。"

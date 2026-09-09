@@ -43,13 +43,13 @@ nonisolated struct ProxyConnection: Decodable, Sendable {
     }
 }
 
-nonisolated enum TrafficRoute: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum TrafficRoute: String, CaseIterable, Identifiable, Sendable, Codable {
     case all, proxy, direct, unknown
     var id: String { rawValue }
     var title: String { NSLocalizedString("traffic.route.\(rawValue)", comment: "") }
 }
 
-nonisolated struct TrafficBytes: Equatable, Sendable {
+nonisolated struct TrafficBytes: Equatable, Sendable, Codable {
     var upload: Double = 0
     var download: Double = 0
     var total: Double { upload + download }
@@ -63,14 +63,14 @@ nonisolated struct TrafficBytes: Equatable, Sendable {
     }
 }
 
-nonisolated struct TrafficKey: Hashable, Sendable {
+nonisolated struct TrafficKey: Hashable, Sendable, Codable {
     let app: String
     let domain: String
     let route: TrafficRoute
     static let overflow = "__traffic_overflow__"
 }
 
-nonisolated struct TrafficEntry: Sendable {
+nonisolated struct TrafficEntry: Sendable, Codable {
     let key: TrafficKey
     var bytes = TrafficBytes()
     var speed = TrafficBytes()
@@ -88,9 +88,16 @@ nonisolated struct TrafficRow: Identifiable {
     let title: String
     var bytes = TrafficBytes()
     var speed = TrafficBytes()
+    var routes: Set<TrafficRoute> = []
+
+    var routeTitle: String {
+        let observed = [TrafficRoute.proxy, .direct, .unknown].filter { routes.contains($0) }
+        return observed.isEmpty ? TrafficRoute.unknown.title : observed.map(\.title).joined(separator: " + ")
+    }
 }
 
 nonisolated struct TrafficSnapshot: Sendable {
+    var dayStart: Date?
     var startedAt: Date?
     var updatedAt: Date?
     var total = TrafficBytes()
@@ -120,6 +127,7 @@ nonisolated struct TrafficSnapshot: Sendable {
             var row = result[id] ?? TrafficRow(id: id, title: title)
             row.bytes = row.bytes + entry.bytes
             row.speed = row.speed + entry.speed
+            row.routes.insert(entry.key.route)
             result[id] = row
         }
         return result.values.sorted { $0.bytes.total == $1.bytes.total ? $0.id < $1.id : $0.bytes.total > $1.bytes.total }

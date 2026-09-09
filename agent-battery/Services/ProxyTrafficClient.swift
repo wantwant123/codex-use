@@ -7,11 +7,20 @@ actor ProxyTrafficClient {
 
     private let session: URLSession
     private let request: URLRequest
-    private var accumulator = TrafficAccumulator()
+    private var accumulator: TrafficAccumulator
+    private let dailyCache: TrafficDailyCache?
+    private let controller: String
+    private var lastSaveTime: TimeInterval = 0
+    private var activeOutbounds: [String] = []
+    private var healthFailures = 0
+    private var probedOutbounds: Set<String> = []
     static let maxResponseBytes = 4 * 1_024 * 1_024
 
-    init(address: String, secret: String = "", configuration: URLSessionConfiguration = .ephemeral) throws {
+    init(address: String, secret: String = "", configuration: URLSessionConfiguration = .ephemeral, dailyCache: TrafficDailyCache? = nil) throws {
         request = try Self.makeRequest(address: address, secret: secret)
+        controller = request.url!.absoluteString
+        self.dailyCache = dailyCache
+        accumulator = TrafficAccumulator(restored: dailyCache?.load(controller: controller))
         configuration.timeoutIntervalForRequest = 4
         configuration.timeoutIntervalForResource = 5
         configuration.connectionProxyDictionary = ["HTTPEnable": 0, "HTTPSEnable": 0, "SOCKSEnable": 0]
@@ -35,24 +44,85 @@ actor ProxyTrafficClient {
 
     func sample() async throws -> TrafficSnapshot {
         do {
-            let (bytes, response) = try await session.bytes(for: request)
-            defer { bytes.task.cancel() }
-            guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
-            guard http.statusCode != 401 && http.statusCode != 403 else { throw ClientError.unauthorized }
-            guard http.statusCode == 200 else { throw ClientError.unavailable }
-            guard response.expectedContentLength <= Int64(Self.maxResponseBytes) else { throw ClientError.oversized }
-            var data = Data()
-            for try await byte in bytes {
-                guard data.count < Self.maxResponseBytes else { throw ClientError.oversized }
-                data.append(byte)
+            let data = try await read(request, limit: Self.maxResponseBytes)
+            return try autoreleasepool {
+                let sample = try Self.decode(data)
+                let now = Date()
+                let time = ProcessInfo.processInfo.systemUptime
+                activeOutbounds = Self.outbounds(in: sample)
+                let snapshot = accumulator.ingest(sample, at: now, time: time)
+                if time - lastSaveTime >= 30 {
+                    dailyCache?.save(snapshot, controller: controller, now: now)
+                    lastSaveTime = time
+                }
+                return snapshot
             }
-            try Task.checkCancellation()
-            let sample = try Self.decode(data)
-            return accumulator.ingest(sample, at: Date(), time: ProcessInfo.processInfo.systemUptime)
         } catch {
+            activeOutbounds = []
+            healthFailures = 0
+            probedOutbounds = []
             accumulator.interrupt()
             throw error
         }
+    }
+
+    func currentSnapshot() -> TrafficSnapshot { accumulator.current(at: Date()) }
+
+    func checkHealth() async -> ProxyHealth {
+        let names = activeOutbounds
+        let delays = await withTaskGroup(of: Int?.self, returning: [Int?].self) { group in
+            for name in names { group.addTask { await self.probeDelay(for: name) } }
+            var results: [Int?] = []
+            for await delay in group { results.append(delay) }
+            return results
+        }
+        guard !Task.isCancelled, Set(names) == Set(activeOutbounds) else { return ProxyHealth() }
+        if Set(names) != probedOutbounds { healthFailures = 0 }
+        probedOutbounds = Set(names)
+        let result = ProxyHealth.result(delays: delays, previousFailures: healthFailures, at: Date(), outbounds: names)
+        healthFailures = result.failures
+        return result.report
+    }
+
+    private func probeDelay(for name: String) async -> Int? {
+        guard !Task.isCancelled else { return nil }
+        var probe = request
+        var url = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)!
+        url.percentEncodedPath = "/proxies/" + name.addingPercentEncoding(withAllowedCharacters: .alphanumerics)! + "/delay"
+        url.queryItems = [URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204"),
+                          URLQueryItem(name: "timeout", value: "3000"), URLQueryItem(name: "expected", value: "204")]
+        probe.url = url.url
+        do {
+            let value = try JSONDecoder().decode(Delay.self, from: await read(probe, limit: 4_096))
+            return value.delay > 0 && value.delay <= 30_000 ? value.delay : nil
+        } catch { return nil }
+    }
+
+    static func outbounds(in sample: ProxyConnections) -> [String] {
+        var totals: [String: Double] = [:]
+        for connection in sample.connections ?? [] where connection.route == .proxy {
+            guard let name = connection.chains?.first, name.utf8.count <= 512 else { continue }
+            totals[name, default: 0] += Double(connection.upload) + Double(connection.download)
+        }
+        return totals.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.prefix(3).map(\.key)
+    }
+
+    private struct Delay: Decodable { let delay: Int }
+
+    private func read(_ request: URLRequest, limit: Int) async throws -> Data {
+        let (bytes, response) = try await session.bytes(for: request)
+        defer { bytes.task.cancel() }
+        guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
+        guard http.statusCode != 401 && http.statusCode != 403 else { throw ClientError.unauthorized }
+        guard http.statusCode == 200 else { throw ClientError.unavailable }
+        guard response.expectedContentLength <= Int64(limit) else { throw ClientError.oversized }
+        var data = Data()
+        for try await byte in bytes {
+            guard data.count < limit else { throw ClientError.oversized }
+            data.append(byte)
+        }
+        try Task.checkCancellation()
+        return data
     }
 
     static func decode(_ data: Data) throws -> ProxyConnections {
@@ -65,7 +135,10 @@ actor ProxyTrafficClient {
         return sample
     }
 
-    func close() { session.invalidateAndCancel() }
+    func close() {
+        session.invalidateAndCancel()
+        dailyCache?.save(accumulator.current(at: Date()), controller: controller)
+    }
 }
 
 nonisolated private final class LocalControllerDelegate: NSObject, URLSessionTaskDelegate, Sendable {

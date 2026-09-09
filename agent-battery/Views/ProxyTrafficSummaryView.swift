@@ -4,10 +4,13 @@ struct ProxyTrafficMenuLabel: View {
     @ObservedObject var store: ProxyTrafficStore
 
     var body: some View {
-        Text(verbatim: "↓ \(TrafficFormat.speed(store.speed?.download))  ↑ \(TrafficFormat.speed(store.speed?.upload))")
-            .monospacedDigit()
-            .font(.system(size: 11))
-            .accessibilityLabel(Text("traffic.title"))
+        HStack(spacing: 5) {
+            Text(verbatim: "↓ \(TrafficFormat.speed(store.speed?.download))  ↑ \(TrafficFormat.speed(store.speed?.upload))")
+                .monospacedDigit()
+                .font(.system(size: 11))
+                .accessibilityLabel(Text("traffic.title"))
+            ProxyHealthIndicator(health: store.currentHealth)
+        }
     }
 }
 
@@ -21,7 +24,7 @@ struct ProxyTrafficSummaryView: View {
                 Label("traffic.title", systemImage: "network")
                     .font(.headline)
                 Spacer()
-                Circle().fill(store.isLive ? Color.green : Color.orange).frame(width: 6, height: 6)
+                ProxyHealthIndicator(health: store.currentHealth)
             }
             HStack {
                 Text(verbatim: "↓ \(TrafficFormat.speed(store.speed?.download))")
@@ -39,6 +42,8 @@ struct ProxyTrafficSummaryView: View {
             }
             .font(.caption).foregroundStyle(.secondary)
             Text(LocalizedStringKey(store.statusKey))
+                .font(.caption).foregroundStyle(.secondary)
+            Text(verbatim: store.currentHealth.kind.title)
                 .font(.caption).foregroundStyle(.secondary)
             Button(action: openDetails) {
                 HStack {

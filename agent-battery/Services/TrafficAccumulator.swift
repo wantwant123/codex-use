@@ -1,6 +1,6 @@
 import Foundation
 
-/// Counter baselines are local to this monitoring session. No pre-launch traffic is attributed.
+/// Daily totals retain observed increments; live connection baselines are never restored from disk.
 nonisolated struct TrafficAccumulator {
     private var previous: ProxyConnections?
     private var previousTime: TimeInterval?
@@ -10,13 +10,25 @@ nonisolated struct TrafficAccumulator {
     private var segment = 0
     private let entryLimit: Int
     private let historyLimit: Int
+    private let calendar: Calendar
     private let dates = ISO8601DateFormatter()
     private let wholeSecondDates = ISO8601DateFormatter()
 
-    init(entryLimit: Int = 2_000, historyLimit: Int = 300) {
+    init(entryLimit: Int = 2_000, historyLimit: Int = 300, calendar: Calendar = .autoupdatingCurrent, restored: TrafficSnapshot? = nil) {
+        self.calendar = calendar
         self.entryLimit = max(1, entryLimit)
         self.historyLimit = max(1, historyLimit)
         dates.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let restored {
+            snapshot = restored
+            snapshot.speed = nil
+            snapshot.history = []
+            snapshot.hasGaps = true
+            for var entry in restored.entries {
+                entry.speed = TrafficBytes()
+                entries[entry.key] = entry
+            }
+        }
     }
 
     mutating func interrupt() {
@@ -26,7 +38,21 @@ nonisolated struct TrafficAccumulator {
         segment += 1
     }
 
+    mutating func current(at date: Date) -> TrafficSnapshot {
+        let day = calendar.startOfDay(for: date)
+        if snapshot.dayStart != day {
+            snapshot = TrafficSnapshot(dayStart: day)
+            entries.removeAll(keepingCapacity: false)
+            previous = nil
+            previousTime = nil
+            previousDate = nil
+            segment = 0
+        }
+        return snapshot
+    }
+
     mutating func ingest(_ sample: ProxyConnections, at date: Date, time: TimeInterval) -> TrafficSnapshot {
+        _ = current(at: date)
         for key in entries.keys { entries[key]?.speed = TrafficBytes() }
         snapshot.speed = nil
         if snapshot.startedAt == nil { snapshot.startedAt = date }

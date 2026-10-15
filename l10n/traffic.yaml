@@ -4,12 +4,9 @@ title:
 enabled:
   en: "Monitor proxy traffic"
   zh: "监控代理流量"
-showMenuBar:
-  en: "Show speed in menu bar"
-  zh: "菜单栏显示实时网速"
-showQuota:
-  en: "Show quota alongside speed"
-  zh: "同时显示剩余额度"
+showHealthInMenuBar:
+  en: "Show proxy status light in menu bar"
+  zh: "菜单栏显示代理状态灯"
 controller:
   en: "Controller address"
   zh: "控制接口地址"

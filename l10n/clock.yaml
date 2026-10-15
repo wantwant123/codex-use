@@ -1,0 +1,9 @@
+changeTimeZone:
+  en: "Change time zone"
+  zh: "切换时区"
+search:
+  en: "Search city or time zone"
+  zh: "搜索城市或时区"
+noResults:
+  en: "No matching time zones"
+  zh: "没有匹配的时区"

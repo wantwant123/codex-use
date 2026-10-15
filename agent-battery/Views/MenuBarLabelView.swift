@@ -8,21 +8,19 @@ struct MenuBarLabelView: View {
 
     var body: some View {
         // MenuBarExtra extracts images/text instead of hosting arbitrary SwiftUI shapes.
-        // One non-template image also preserves the order: quota, speed, health light.
-        Image(nsImage: renderedImage())
-            .help(settings.trafficEnabled && settings.showTrafficInMenuBar
-                  ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : "")
+        // One non-template image preserves the order: quota, clock, health light.
+        TimelineView(.everyMinute) { context in
+            Image(nsImage: renderedImage(at: context.date))
+                .accessibilityLabel(MenuBarClock.text(at: context.date, in: settings.clockTimeZone))
+                .help(settings.trafficEnabled && settings.showProxyHealthInMenuBar
+                      ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : settings.clockTimeZoneIdentifier)
+        }
     }
 
-    func renderedImage() -> NSImage {
-        var images: [NSImage] = []
-        let showsTraffic = settings.trafficEnabled && settings.showTrafficInMenuBar
-        if !showsTraffic || settings.showQuotaWithTraffic {
-            images.append(quotaImage(for: store.primarySnapshot))
-        }
-        if showsTraffic {
-            let speed = "↓ \(TrafficFormat.speed(traffic.speed?.download))  ↑ \(TrafficFormat.speed(traffic.speed?.upload))"
-            images.append(MenuBarText.image(text: speed, color: .white))
+    func renderedImage(at date: Date = Date()) -> NSImage {
+        var images = [quotaImage(for: store.primarySnapshot),
+                      MenuBarText.image(text: MenuBarClock.text(at: date, in: settings.clockTimeZone), color: .white)]
+        if settings.trafficEnabled && settings.showProxyHealthInMenuBar {
             images.append(ProxyHealthIndicator(health: traffic.currentHealth).menuBarImage)
         }
         let spacing: CGFloat = 5

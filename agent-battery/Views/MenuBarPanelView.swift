@@ -11,6 +11,10 @@ struct MenuBarPanelView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
+            MenuBarClockView(settings: settings)
+
+            Divider()
+
             UsageToolCardView(
                 snapshot: store.snapshot(for: .codex),
                 lastRefreshAt: store.lastRefreshAt,

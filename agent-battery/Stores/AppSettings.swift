@@ -34,11 +34,15 @@ final class AppSettings: ObservableObject {
     @Published var trafficEnabled: Bool {
         didSet { defaults.set(trafficEnabled, forKey: "trafficEnabled") }
     }
-    @Published var showTrafficInMenuBar: Bool {
-        didSet { defaults.set(showTrafficInMenuBar, forKey: "showTrafficInMenuBar") }
+    @Published var showProxyHealthInMenuBar: Bool {
+        didSet { defaults.set(showProxyHealthInMenuBar, forKey: "showProxyHealthInMenuBar") }
     }
-    @Published var showQuotaWithTraffic: Bool {
-        didSet { defaults.set(showQuotaWithTraffic, forKey: "showQuotaWithTraffic") }
+    @Published var clockTimeZoneIdentifier: String {
+        didSet { defaults.set(clockTimeZoneIdentifier, forKey: "clockTimeZoneIdentifier") }
+    }
+
+    var clockTimeZone: TimeZone {
+        TimeZone(identifier: clockTimeZoneIdentifier) ?? .current
     }
     @Published var proxyControllerAddress: String {
         didSet { defaults.set(proxyControllerAddress, forKey: "proxyControllerAddress") }
@@ -99,8 +103,10 @@ final class AppSettings: ObservableObject {
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         trafficEnabled = Self.bool(defaults, "trafficEnabled", defaultValue: true)
-        showTrafficInMenuBar = Self.bool(defaults, "showTrafficInMenuBar", defaultValue: true)
-        showQuotaWithTraffic = Self.bool(defaults, "showQuotaWithTraffic", defaultValue: true)
+        showProxyHealthInMenuBar = Self.bool(defaults, "showProxyHealthInMenuBar",
+            defaultValue: Self.bool(defaults, "showTrafficInMenuBar", defaultValue: true))
+        let savedTimeZone = defaults.string(forKey: "clockTimeZoneIdentifier") ?? TimeZone.current.identifier
+        clockTimeZoneIdentifier = TimeZone(identifier: savedTimeZone)?.identifier ?? TimeZone.current.identifier
         proxyControllerAddress = defaults.string(forKey: "proxyControllerAddress") ?? "http://127.0.0.1:9090"
         menuBarDisplayMode = MenuBarDisplayMode(
             rawValue: defaults.string(forKey: Keys.menuBarDisplayMode) ?? ""

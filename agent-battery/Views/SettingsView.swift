@@ -29,6 +29,14 @@ struct SettingsView: View {
                 if settings.colorByUsage {
                     UsageColorBar(settings: settings)
                 }
+
+                Toggle("settings.showClockInMenuBar", isOn: $settings.showClockInMenuBar)
+                Toggle("settings.showTokenSpeedInMenuBar", isOn: $settings.showTokenSpeedInMenuBar)
+                Toggle("traffic.showHealthInMenuBar", isOn: $settings.showProxyHealthInMenuBar)
+                    .disabled(!settings.trafficEnabled)
+                Text("settings.menuBarVisibilityHint")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             ProxyTrafficSettingsView(settings: settings, store: traffic)

@@ -12,17 +12,19 @@ struct MenuBarLabelView: View {
         // One non-template image preserves the order: quota, output speed, clock, health light.
         TimelineView(.everyMinute) { context in
             Image(nsImage: renderedImage(at: context.date))
-                .accessibilityLabel("\(tokenSpeed.menuBarText) · \(MenuBarClock.text(at: context.date, in: settings.clockTimeZone))")
-                .help(String(localized: "tokenSpeed.note") + "\n" +
-                      (settings.trafficEnabled && settings.showProxyHealthInMenuBar
-                       ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : settings.clockTimeZoneIdentifier))
+                .accessibilityLabel(labelText(at: context.date))
+                .help(tooltip(at: context.date))
         }
     }
 
     func renderedImage(at date: Date = Date()) -> NSImage {
-        var images = [quotaImage(for: store.primarySnapshot),
-                      MenuBarText.image(text: tokenSpeed.menuBarText, color: .white),
-                      MenuBarText.image(text: MenuBarClock.text(at: date, in: settings.clockTimeZone), color: .white)]
+        var images = [quotaImage(for: store.primarySnapshot)]
+        if settings.showTokenSpeedInMenuBar {
+            images.append(MenuBarText.image(text: tokenSpeed.menuBarText, color: .white))
+        }
+        if settings.showClockInMenuBar {
+            images.append(MenuBarText.image(text: MenuBarClock.text(at: date, in: settings.clockTimeZone), color: .white))
+        }
         if settings.trafficEnabled && settings.showProxyHealthInMenuBar {
             images.append(ProxyHealthIndicator(health: traffic.currentHealth).menuBarImage)
         }
@@ -40,6 +42,24 @@ struct MenuBarLabelView: View {
         }
         image.isTemplate = false
         return image
+    }
+
+    private func labelText(at date: Date) -> String {
+        let snapshot = store.primarySnapshot
+        var parts = ["\(snapshot.tool.shortName) \(UsageFormatters.percentText(snapshot.menuBarRemainingPercent))"]
+        if settings.showTokenSpeedInMenuBar { parts.append(tokenSpeed.menuBarText) }
+        if settings.showClockInMenuBar { parts.append(MenuBarClock.text(at: date, in: settings.clockTimeZone)) }
+        if settings.trafficEnabled && settings.showProxyHealthInMenuBar { parts.append(traffic.currentHealth.kind.title) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func tooltip(at date: Date) -> String {
+        var parts = [labelText(at: date)]
+        if settings.showTokenSpeedInMenuBar { parts.append(String(localized: "tokenSpeed.note")) }
+        if settings.trafficEnabled && settings.showProxyHealthInMenuBar {
+            parts.append(ProxyHealthIndicator(health: traffic.currentHealth).tooltip)
+        }
+        return parts.joined(separator: "\n")
     }
 
     private func quotaImage(for snapshot: UsageSnapshot) -> NSImage {

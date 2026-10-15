@@ -28,6 +28,15 @@ displayMode:
 showPercent:
   en: "Show percentage"
   zh: "显示百分比"
+showClockInMenuBar:
+  en: "Show date and time in menu bar"
+  zh: "菜单栏显示日期与时间"
+showTokenSpeedInMenuBar:
+  en: "Show output speed in menu bar"
+  zh: "菜单栏显示 token 输出速度"
+menuBarVisibilityHint:
+  en: "Quota always stays visible. These switches only affect the menu bar; details remain in the panel."
+  zh: "额度始终显示。这些开关仅控制菜单栏展示，面板中的信息仍会保留。"
 colorByUsage:
   en: "Color by usage"
   zh: "按用量着色"

@@ -37,6 +37,12 @@ final class AppSettings: ObservableObject {
     @Published var showProxyHealthInMenuBar: Bool {
         didSet { defaults.set(showProxyHealthInMenuBar, forKey: "showProxyHealthInMenuBar") }
     }
+    @Published var showClockInMenuBar: Bool {
+        didSet { defaults.set(showClockInMenuBar, forKey: "showClockInMenuBar") }
+    }
+    @Published var showTokenSpeedInMenuBar: Bool {
+        didSet { defaults.set(showTokenSpeedInMenuBar, forKey: "showTokenSpeedInMenuBar") }
+    }
     @Published var clockTimeZoneIdentifier: String {
         didSet { defaults.set(clockTimeZoneIdentifier, forKey: "clockTimeZoneIdentifier") }
     }
@@ -105,6 +111,8 @@ final class AppSettings: ObservableObject {
         trafficEnabled = Self.bool(defaults, "trafficEnabled", defaultValue: true)
         showProxyHealthInMenuBar = Self.bool(defaults, "showProxyHealthInMenuBar",
             defaultValue: Self.bool(defaults, "showTrafficInMenuBar", defaultValue: true))
+        showClockInMenuBar = Self.bool(defaults, "showClockInMenuBar", defaultValue: true)
+        showTokenSpeedInMenuBar = Self.bool(defaults, "showTokenSpeedInMenuBar", defaultValue: true)
         let savedTimeZone = defaults.string(forKey: "clockTimeZoneIdentifier") ?? TimeZone.current.identifier
         clockTimeZoneIdentifier = TimeZone(identifier: savedTimeZone)?.identifier ?? TimeZone.current.identifier
         proxyControllerAddress = defaults.string(forKey: "proxyControllerAddress") ?? "http://127.0.0.1:9090"

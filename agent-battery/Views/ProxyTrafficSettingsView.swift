@@ -10,8 +10,6 @@ struct ProxyTrafficSettingsView: View {
     var body: some View {
         Section("traffic.title") {
             Toggle("traffic.enabled", isOn: $settings.trafficEnabled)
-            Toggle("traffic.showHealthInMenuBar", isOn: $settings.showProxyHealthInMenuBar)
-                .disabled(!settings.trafficEnabled)
             TextField("traffic.controller", text: $address)
             SecureField("traffic.secret", text: $secret)
             HStack {

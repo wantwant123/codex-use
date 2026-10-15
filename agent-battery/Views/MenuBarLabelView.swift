@@ -6,15 +6,16 @@ struct MenuBarLabelView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var traffic: ProxyTrafficStore
     @ObservedObject var tokenSpeed: TokenSpeedStore
+    @StateObject private var clock = MenuBarClockStore()
 
     var body: some View {
         // MenuBarExtra extracts images/text instead of hosting arbitrary SwiftUI shapes.
         // One non-template image preserves the order: quota, output speed, clock, health light.
-        TimelineView(.everyMinute) { context in
-            Image(nsImage: renderedImage(at: context.date))
-                .accessibilityLabel(labelText(at: context.date))
-                .help(tooltip(at: context.date))
-        }
+        // TimelineView cannot own the status-item label: its timeline can trigger
+        // a continuous native layout loop before the menu bar item appears.
+        Image(nsImage: renderedImage(at: clock.now))
+            .accessibilityLabel(labelText(at: clock.now))
+            .help(tooltip(at: clock.now))
     }
 
     func renderedImage(at date: Date = Date()) -> NSImage {

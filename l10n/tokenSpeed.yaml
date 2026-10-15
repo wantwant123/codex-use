@@ -1,0 +1,12 @@
+title:
+  en: "Recent output speed"
+  zh: "最近输出速度"
+waiting:
+  en: "Waiting for a new sample"
+  zh: "等待新采样"
+recentValue:
+  en: "Recent %@"
+  zh: "最近 %@"
+note:
+  en: "Estimated average of the latest completed model request across local sessions. Includes reasoning output, excludes input tokens and tool execution time; network waiting still counts. Updates after completion and clears after 60 seconds."
+  zh: "本机会话中最近一次已完成模型请求的平均输出速度估算。含推理输出，不计输入 token 和工具执行时间，仍包含网络等待。请求完成后更新，60 秒无新结果后清空。"

@@ -5,20 +5,23 @@ struct MenuBarLabelView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: UsageStore
     @ObservedObject var traffic: ProxyTrafficStore
+    @ObservedObject var tokenSpeed: TokenSpeedStore
 
     var body: some View {
         // MenuBarExtra extracts images/text instead of hosting arbitrary SwiftUI shapes.
-        // One non-template image preserves the order: quota, clock, health light.
+        // One non-template image preserves the order: quota, output speed, clock, health light.
         TimelineView(.everyMinute) { context in
             Image(nsImage: renderedImage(at: context.date))
-                .accessibilityLabel(MenuBarClock.text(at: context.date, in: settings.clockTimeZone))
-                .help(settings.trafficEnabled && settings.showProxyHealthInMenuBar
-                      ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : settings.clockTimeZoneIdentifier)
+                .accessibilityLabel("\(tokenSpeed.menuBarText) · \(MenuBarClock.text(at: context.date, in: settings.clockTimeZone))")
+                .help(String(localized: "tokenSpeed.note") + "\n" +
+                      (settings.trafficEnabled && settings.showProxyHealthInMenuBar
+                       ? ProxyHealthIndicator(health: traffic.currentHealth).tooltip : settings.clockTimeZoneIdentifier))
         }
     }
 
     func renderedImage(at date: Date = Date()) -> NSImage {
         var images = [quotaImage(for: store.primarySnapshot),
+                      MenuBarText.image(text: tokenSpeed.menuBarText, color: .white),
                       MenuBarText.image(text: MenuBarClock.text(at: date, in: settings.clockTimeZone), color: .white)]
         if settings.trafficEnabled && settings.showProxyHealthInMenuBar {
             images.append(ProxyHealthIndicator(health: traffic.currentHealth).menuBarImage)

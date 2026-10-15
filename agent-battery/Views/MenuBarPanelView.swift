@@ -5,6 +5,7 @@ struct MenuBarPanelView: View {
     @ObservedObject var settings: AppSettings
     @ObservedObject var store: UsageStore
     @ObservedObject var traffic: ProxyTrafficStore
+    @ObservedObject var tokenSpeed: TokenSpeedStore
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
@@ -12,6 +13,18 @@ struct MenuBarPanelView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             MenuBarClockView(settings: settings)
+
+            HStack {
+                Text("tokenSpeed.title")
+                Spacer()
+                if tokenSpeed.sample != nil {
+                    Text(verbatim: tokenSpeed.text).monospacedDigit()
+                } else {
+                    Text("tokenSpeed.waiting").foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption)
+            .help("tokenSpeed.note")
 
             Divider()
 

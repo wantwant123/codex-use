@@ -1,33 +1,18 @@
-title:
-  en: "Proxy Traffic"
-  zh: "代理流量"
+clashTitle:
+  en: "Clash Traffic"
+  zh: "Clash 流量"
+clashSource:
+  en: "Reads traffic from Clash Verge. The menu bar shows the exit country reported by IPinfo through Clash."
+  zh: "从 Clash Verge 读取流量。菜单栏显示经 Clash 向 IPinfo 查询到的出口国家。"
+clashDisconnected:
+  en: "Waiting for Clash Verge. Monitoring resumes when its core is available."
+  zh: "等待 Clash Verge 内核连接，就绪后会自动恢复监控。"
 enabled:
   en: "Monitor proxy traffic"
   zh: "监控代理流量"
 showHealthInMenuBar:
   en: "Show proxy status light in menu bar"
   zh: "菜单栏显示代理状态灯"
-controller:
-  en: "Controller address"
-  zh: "控制接口地址"
-secret:
-  en: "API secret (optional)"
-  zh: "接口密钥（可留空）"
-localOnly:
-  en: "Local Clash / Mihomo API. Secrets are saved in Keychain."
-  zh: "本机 Clash / Mihomo 接口，密钥保存到钥匙串。"
-apply:
-  en: "Apply"
-  zh: "应用"
-applied:
-  en: "Saved. Reconnecting; today's traffic is retained."
-  zh: "已保存，正在重连并保留今日统计。"
-secretFailed:
-  en: "Could not save the secret to Keychain."
-  zh: "无法将密钥保存到钥匙串。"
-invalidAddress:
-  en: "Use a local address such as http://127.0.0.1:9090."
-  zh: "请填写本机地址，例如 http://127.0.0.1:9090。"
 connecting:
   en: "Connecting to local proxy…"
   zh: "正在连接本机代理…"
@@ -40,18 +25,12 @@ live:
 disabled:
   en: "Monitoring is off"
   zh: "监控已关闭"
-disconnected:
-  en: "Proxy unavailable. Retrying; check the controller address in Settings."
-  zh: "代理不可用，正在重连；可在设置中检查接口地址。"
-unauthorized:
-  en: "API access denied. Check the secret in Settings."
-  zh: "接口鉴权失败，请在设置中检查密钥。"
 oversized:
   en: "Connection response exceeds the monitoring limit. Retrying."
   zh: "连接数据超出监控容量，稍后重试。"
-invalidResponse:
-  en: "Unsupported controller response. Check the address in Settings."
-  zh: "接口返回的数据不受支持，请检查设置中的地址。"
+clashInvalidResponse:
+  en: "Clash Verge returned an unsupported response."
+  zh: "Clash Verge 返回的数据不受支持。"
 details:
   en: "Applications & websites"
   zh: "查看应用与网站流量"

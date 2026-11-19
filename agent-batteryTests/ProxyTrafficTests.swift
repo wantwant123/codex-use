@@ -116,39 +116,28 @@ struct ProxyTrafficTests {
         #expect(throws: (any Error).self) { try ProxyTrafficClient.decode(Data(count: ProxyTrafficClient.maxResponseBytes + 1)) }
     }
 
-    @Test func credentialsStayOnExplicitLoopbackController() throws {
-        let request = try ProxyTrafficClient.makeRequest(address: "http://127.0.0.1:9090", secret: "fixture")
-        #expect(request.url?.absoluteString == "http://127.0.0.1:9090/connections")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture")
-        for address in ["https://example.com:9090", "http://127.0.0.1:9090@evil.test", "http://127.0.0.1:9090?token=x", "http://127.0.0.1:9090/other", "http://127.0.0.1:99999"] {
-            #expect(throws: (any Error).self) { try ProxyTrafficClient.makeRequest(address: address, secret: "fixture") }
-        }
-    }
-
-    @Test func clientHandlesAuthenticationInvalidPayloadAndOversizedStreams() async throws {
-        let cases: [(Int, ProxyTrafficClient.ClientError?)] = [
-            (19090, nil), (19091, .unauthorized), (19092, .invalidResponse),
-            (19093, .oversized), (19094, .oversized)
-        ]
-        for (port, expected) in cases {
-            let configuration = URLSessionConfiguration.ephemeral
-            configuration.protocolClasses = [TrafficFixtureProtocol.self]
-            let client = try ProxyTrafficClient(address: "http://127.0.0.1:\(port)", configuration: configuration)
-            do {
-                let snapshot = try await client.sample()
-                #expect(expected == nil)
-                #expect(snapshot.total.total == 0)
-            } catch {
-                #expect(error as? ProxyTrafficClient.ClientError == expected)
+    @Test func readsClashSocketAndBoundsResponses() async throws {
+        let fixture = try await ClashSocketFixture { target in
+            switch target {
+            case "/connections": ClashSocketFixture.response(#"{"uploadTotal":200,"downloadTotal":400,"connections":[]}"#)
+            case "/oversized": ClashSocketFixture.response(String(repeating: "x", count: 100))
+            default: ClashSocketFixture.response("", status: 503)
             }
-            await client.close()
         }
+        let api = ClashVergeAPI(socketPaths: ["/missing", fixture.path])
+        let client = ProxyTrafficClient(api: api)
+        let snapshot = try await client.sample()
+        #expect(snapshot.total.total == 0)
+        await #expect(throws: ProxyTrafficClient.ClientError.oversized) { try await api.read("/oversized", limit: 10) }
+        await #expect(throws: ProxyTrafficClient.ClientError.unavailable) { try await api.read("/missing", limit: 10) }
+        await client.close()
+        withExtendedLifetime(fixture) {}
     }
 
     @Test func cancellingBlockedRequestReturnsPromptly() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [TrafficFixtureProtocol.self]
-        let client = try ProxyTrafficClient(address: "http://127.0.0.1:19095", configuration: configuration)
+        let fixture = try await ClashSocketFixture { _ in nil }
+        defer { withExtendedLifetime(fixture) {} }
+        let client = ProxyTrafficClient(api: ClashVergeAPI(socketPaths: [fixture.path]))
         let start = Date()
         let task = Task { try await client.sample() }
         try await Task.sleep(for: .milliseconds(100))
@@ -174,25 +163,4 @@ struct ProxyTrafficTests {
             metadata: .init(host: domain, destinationIP: "1.2.3.4", process: "Helper", processPath: "/Applications/Browser.app/Contents/Helpers/Helper.app/Contents/MacOS/Helper"),
             upload: upload, download: upload * 2, start: format.string(from: start ?? epoch.addingTimeInterval(-10)), chains: chains)
     }
-}
-
-private final class TrafficFixtureProtocol: URLProtocol, @unchecked Sendable {
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        let port = request.url!.port!
-        if port == 19095 { return }
-        let body: Data
-        switch port {
-        case 19092: body = Data(#"{"uploadTotal":-1,"downloadTotal":0}"#.utf8)
-        case 19094: body = Data(repeating: 32, count: ProxyTrafficClient.maxResponseBytes + 1)
-        default: body = Data(#"{"uploadTotal":200,"downloadTotal":400,"connections":[]}"#.utf8)
-        }
-        let response = HTTPURLResponse(url: request.url!, statusCode: port == 19091 ? 401 : 200,
-            httpVersion: "HTTP/1.1", headerFields: port == 19093 ? ["Content-Length": "99999999"] : [:])!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: body)
-        client?.urlProtocolDidFinishLoading(self)
-    }
-    override func stopLoading() {}
 }

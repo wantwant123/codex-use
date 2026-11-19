@@ -7,7 +7,7 @@ struct ProxyTrafficSummaryView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("traffic.title", systemImage: "network")
+                Label("traffic.clashTitle", systemImage: "network")
                     .font(.headline)
                 Spacer()
                 ProxyHealthIndicator(health: store.currentHealth)

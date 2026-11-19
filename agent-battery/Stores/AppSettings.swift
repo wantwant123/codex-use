@@ -50,10 +50,6 @@ final class AppSettings: ObservableObject {
     var clockTimeZone: TimeZone {
         TimeZone(identifier: clockTimeZoneIdentifier) ?? .current
     }
-    @Published var proxyControllerAddress: String {
-        didSet { defaults.set(proxyControllerAddress, forKey: "proxyControllerAddress") }
-    }
-
     private let defaults: UserDefaults
 
     @Published var menuBarDisplayMode: MenuBarDisplayMode {
@@ -115,7 +111,6 @@ final class AppSettings: ObservableObject {
         showTokenSpeedInMenuBar = Self.bool(defaults, "showTokenSpeedInMenuBar", defaultValue: true)
         let savedTimeZone = defaults.string(forKey: "clockTimeZoneIdentifier") ?? TimeZone.current.identifier
         clockTimeZoneIdentifier = TimeZone(identifier: savedTimeZone)?.identifier ?? TimeZone.current.identifier
-        proxyControllerAddress = defaults.string(forKey: "proxyControllerAddress") ?? "http://127.0.0.1:9090"
         menuBarDisplayMode = MenuBarDisplayMode(
             rawValue: defaults.string(forKey: Keys.menuBarDisplayMode) ?? ""
         ) ?? .battery

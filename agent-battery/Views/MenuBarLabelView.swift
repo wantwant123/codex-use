@@ -10,7 +10,7 @@ struct MenuBarLabelView: View {
 
     var body: some View {
         // MenuBarExtra extracts images/text instead of hosting arbitrary SwiftUI shapes.
-        // One non-template image preserves the order: quota, output speed, clock, health light.
+        // One non-template image preserves the order: quota, output speed, clock, country, health light.
         // TimelineView cannot own the status-item label: its timeline can trigger
         // a continuous native layout loop before the menu bar item appears.
         Image(nsImage: renderedImage(at: clock.now))
@@ -25,6 +25,9 @@ struct MenuBarLabelView: View {
         }
         if settings.showClockInMenuBar {
             images.append(MenuBarText.image(text: MenuBarClock.text(at: date, in: settings.clockTimeZone), color: .white))
+        }
+        if let country {
+            images.append(MenuBarText.image(text: country, color: .white))
         }
         if settings.trafficEnabled && settings.showProxyHealthInMenuBar {
             images.append(ProxyHealthIndicator(health: traffic.currentHealth).menuBarImage)
@@ -45,11 +48,17 @@ struct MenuBarLabelView: View {
         return image
     }
 
+    private var country: String? {
+        guard settings.trafficEnabled, let code = traffic.countryCode else { return nil }
+        return Locale.current.localizedString(forRegionCode: code)
+    }
+
     private func labelText(at date: Date) -> String {
         let snapshot = store.primarySnapshot
         var parts = ["\(snapshot.tool.shortName) \(UsageFormatters.percentText(snapshot.menuBarRemainingPercent))"]
         if settings.showTokenSpeedInMenuBar { parts.append(tokenSpeed.menuBarText) }
         if settings.showClockInMenuBar { parts.append(MenuBarClock.text(at: date, in: settings.clockTimeZone)) }
+        if let country { parts.append(country) }
         if settings.trafficEnabled && settings.showProxyHealthInMenuBar { parts.append(traffic.currentHealth.kind.title) }
         return parts.joined(separator: " · ")
     }

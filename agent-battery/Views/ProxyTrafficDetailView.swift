@@ -104,7 +104,7 @@ struct ProxyTrafficDetailView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("traffic.title").font(.title2.bold())
+                    Text("traffic.clashTitle").font(.title2.bold())
                     ProxyHealthIndicator(health: store.currentHealth)
                     Text(verbatim: store.currentHealth.kind.title).font(.caption).foregroundStyle(.secondary)
                     if let latency = store.currentHealth.latencyMS {

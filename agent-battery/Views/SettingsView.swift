@@ -3,7 +3,6 @@ import SwiftUI
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    @ObservedObject var traffic: ProxyTrafficStore
 
     var body: some View {
         Form {
@@ -39,7 +38,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            ProxyTrafficSettingsView(settings: settings, store: traffic)
+            Section("traffic.clashTitle") {
+                Toggle("traffic.enabled", isOn: $settings.trafficEnabled)
+                Text("traffic.clashSource").font(.caption).foregroundStyle(.secondary)
+            }
 
             Section("settings.sectionRefresh") {
                 Picker("settings.refreshInterval", selection: refreshIntervalSelection) {

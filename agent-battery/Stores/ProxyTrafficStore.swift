@@ -14,14 +14,15 @@ final class ProxyTrafficStore: ObservableObject {
     private var rolloverTimer: Timer?
     private var termination: AnyCancellable?
     private let dailyCache: TrafficDailyCache
-    private var activeController = ""
+    @Published private(set) var countryCode: String?
+    private var countryTask: Task<Void, Never>?
     private var subscription: AnyCancellable?
     private let settings: AppSettings
 
     init(settings: AppSettings, dailyCache: TrafficDailyCache = TrafficDailyCache()) {
         self.dailyCache = dailyCache
         self.settings = settings
-        subscription = Publishers.CombineLatest(settings.$trafficEnabled, settings.$proxyControllerAddress)
+        subscription = settings.$trafficEnabled
             .dropFirst()
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] _ in self?.restart() }
@@ -42,6 +43,7 @@ final class ProxyTrafficStore: ObservableObject {
     deinit {
         task?.cancel()
         healthTask?.cancel()
+        countryTask?.cancel()
         rolloverTimer?.invalidate()
     }
 
@@ -50,6 +52,8 @@ final class ProxyTrafficStore: ObservableObject {
         let previousTask = task
         previousTask?.cancel()
         healthTask?.cancel()
+        countryTask?.cancel()
+        countryCode = nil
         health = ProxyHealth()
         isLive = false
         if snapshot.dayStart != Calendar.autoupdatingCurrent.startOfDay(for: Date()) {
@@ -59,27 +63,15 @@ final class ProxyTrafficStore: ObservableObject {
             statusKey = "traffic.disabled"
             return
         }
-        let address = settings.proxyControllerAddress
-        let secret = ProxyControllerSecret.read()
-        guard let controller = try? ProxyTrafficClient.makeRequest(address: address, secret: "").url?.absoluteString else {
-            statusKey = "traffic.invalidAddress"
-            return
-        }
-        if controller != activeController {
-            snapshot = TrafficSnapshot(dayStart: Calendar.autoupdatingCurrent.startOfDay(for: Date()))
-        }
         statusKey = "traffic.connecting"
         let cache = dailyCache
         task = Task { [weak self] in
             // Finish the prior client's checkpoint before loading the next one.
             await previousTask?.value
             guard !Task.isCancelled else { return }
-            let client: ProxyTrafficClient
-            do { client = try ProxyTrafficClient(address: address, secret: secret, dailyCache: cache) }
-            catch { self?.statusKey = "traffic.invalidAddress"; return }
+            let client = ProxyTrafficClient(dailyCache: cache)
             let restored = await client.currentSnapshot()
             guard !Task.isCancelled else { await client.close(); return }
-            self?.activeController = controller
             self?.snapshot = restored
             self?.storageFailed = cache.hasError
             self?.startHealthChecks(client: client)
@@ -91,6 +83,7 @@ final class ProxyTrafficStore: ObservableObject {
                     guard !Task.isCancelled else { break }
                     self?.snapshot = snapshot
                     self?.storageFailed = self?.dailyCache.hasError ?? false
+                    self?.startCountryChecks()
                     self?.isLive = true
                     self?.statusKey = snapshot.speed == nil ? "traffic.baseline" : "traffic.live"
                     failures = 0
@@ -99,6 +92,8 @@ final class ProxyTrafficStore: ObservableObject {
                     let current = await client.currentSnapshot()
                     guard !Task.isCancelled else { break }
                     self?.snapshot = current
+                    self?.countryTask?.cancel()
+                    self?.countryCode = nil
                     self?.isLive = false
                     self?.statusKey = Self.message(for: error)
                     failures = min(failures + 1, 5)
@@ -108,6 +103,21 @@ final class ProxyTrafficStore: ObservableObject {
                 do { try await Task.sleep(for: .seconds(delay)) } catch { break }
             }
             await client.close()
+        }
+    }
+
+    private func startCountryChecks() {
+        // Keep the slot until cancellation finishes, even across a reconnect.
+        guard countryTask == nil else { return }
+        countryTask = Task { [weak self] in
+            defer { self?.countryTask = nil }
+            let api = ClashVergeAPI()
+            while !Task.isCancelled {
+                let code = try? await api.exitCountry()
+                guard !Task.isCancelled else { return }
+                self?.countryCode = code
+                do { try await Task.sleep(for: .seconds(30)) } catch { return }
+            }
         }
     }
 
@@ -134,8 +144,7 @@ final class ProxyTrafficStore: ObservableObject {
     }
 
     private func persistCurrent() {
-        guard !activeController.isEmpty else { return }
-        dailyCache.save(snapshot, controller: activeController)
+        dailyCache.save(snapshot, controller: ClashVergeAPI.controller)
         storageFailed = dailyCache.hasError
     }
 
@@ -143,10 +152,9 @@ final class ProxyTrafficStore: ObservableObject {
 
     private static func message(for error: Error) -> String {
         switch error {
-        case ProxyTrafficClient.ClientError.unauthorized: "traffic.unauthorized"
         case ProxyTrafficClient.ClientError.oversized: "traffic.oversized"
-        case ProxyTrafficClient.ClientError.invalidResponse, is DecodingError: "traffic.invalidResponse"
-        default: "traffic.disconnected"
+        case ProxyTrafficClient.ClientError.invalidResponse, is DecodingError: "traffic.clashInvalidResponse"
+        default: "traffic.clashDisconnected"
         }
     }
 }

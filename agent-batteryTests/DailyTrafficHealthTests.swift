@@ -107,9 +107,9 @@ struct DailyTrafficHealthTests {
     }
 
     @Test func healthRequestUsesNodeDelayEndpoint() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [HealthFixtureProtocol.self]
-        let client = try ProxyTrafficClient(address: "http://127.0.0.1:19100", secret: "fixture", configuration: configuration)
+        let fixture = try await healthFixture(blockProbe: false)
+        defer { withExtendedLifetime(fixture) {} }
+        let client = ProxyTrafficClient(api: ClashVergeAPI(socketPaths: [fixture.path]))
         _ = try await client.sample()
         let report = await client.checkHealth()
         #expect(report.kind == .healthy)
@@ -119,9 +119,9 @@ struct DailyTrafficHealthTests {
     }
 
     @Test func cancellingHealthProbeReturnsPromptly() async throws {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [HealthFixtureProtocol.self]
-        let client = try ProxyTrafficClient(address: "http://127.0.0.1:19101", secret: "fixture", configuration: configuration)
+        let fixture = try await healthFixture(blockProbe: true)
+        defer { withExtendedLifetime(fixture) {} }
+        let client = ProxyTrafficClient(api: ClashVergeAPI(socketPaths: [fixture.path]))
         _ = try await client.sample()
         let start = Date()
         let task = Task { await client.checkHealth() }
@@ -157,26 +157,14 @@ struct DailyTrafficHealthTests {
     }
 }
 
-private final class HealthFixtureProtocol: URLProtocol, @unchecked Sendable {
-    override class func canInit(with request: URLRequest) -> Bool { true }
-    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() {
-        let url = request.url!
-        #expect(url.host == "127.0.0.1")
-        #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer fixture")
-        if url.port == 19101 && url.path != "/connections" { return }
-        let data: Data
-        if url.path == "/connections" {
-            data = Data(#"{"uploadTotal":10,"downloadTotal":20,"connections":[{"id":"a","upload":10,"download":20,"chains":["node / test"],"metadata":{}}]}"#.utf8)
-        } else {
-            #expect(url.absoluteString.contains("node%20%2F%20test/delay"))
-            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems
-            #expect(query?.contains(URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204")) == true)
-            data = Data(#"{"delay":100}"#.utf8)
+private func healthFixture(blockProbe: Bool) async throws -> ClashSocketFixture {
+    try await ClashSocketFixture { target in
+        if target == "/connections" {
+            return ClashSocketFixture.response(#"{"uploadTotal":10,"downloadTotal":20,"connections":[{"id":"a","upload":10,"download":20,"chains":["node / test"],"metadata":{}}]}"#)
         }
-        client?.urlProtocol(self, didReceive: HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: data)
-        client?.urlProtocolDidFinishLoading(self)
+        #expect(target.hasPrefix("/proxies/node%20%2F%20test/delay?"))
+        let query = URLComponents(string: target)?.queryItems
+        #expect(query?.contains(URLQueryItem(name: "url", value: "https://www.gstatic.com/generate_204")) == true)
+        return blockProbe ? nil : ClashSocketFixture.response(#"{"delay":100}"#)
     }
-    override func stopLoading() {}
 }

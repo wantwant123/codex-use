@@ -27,14 +27,14 @@ struct AgentBatteryApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window("traffic.title", id: "traffic") {
+        Window("traffic.clashTitle", id: "traffic") {
             ProxyTrafficDetailView(store: traffic)
         }
         .defaultSize(width: 820, height: 640)
         .windowResizability(.contentMinSize)
 
         Settings {
-            SettingsView(settings: settings, traffic: traffic)
+            SettingsView(settings: settings)
         }
     }
 }

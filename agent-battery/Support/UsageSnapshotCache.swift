@@ -61,7 +61,10 @@ extension UsageSnapshot {
             monthlyTokenUsage: monthlyTokenUsage,
             updatedAt: updatedAt,
             status: status,
-            message: message
+            message: message,
+            tokenBreakdown: tokenBreakdown,
+            topModels: topModels,
+            isBudgetEstimated: isBudgetEstimated
         )
     }
 }

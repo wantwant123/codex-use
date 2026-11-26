@@ -67,3 +67,45 @@ lastChecked:
 resetPending:
   en: "Awaiting reset confirmation"
   zh: "等待确认重置"
+dailyBudgetRemaining:
+  en: "Daily Budget"
+  zh: "今日预算剩余"
+weeklyBudgetRemaining:
+  en: "Weekly Budget"
+  zh: "每周预算剩余"
+budgetEstimatedBadge:
+  en: "Budget Est."
+  zh: "预算估算"
+liveBadge:
+  en: "Live"
+  zh: "实时"
+localBadge:
+  en: "Local"
+  zh: "本地"
+budgetHint:
+  en: "Estimated from local transcripts & custom token budget"
+  zh: "基于本地会话日志与自定义 Token 预算估算"
+tokenBreakdown:
+  en: "Today Breakdown"
+  zh: "今日构成"
+inputTokens:
+  en: "Input"
+  zh: "输入"
+cacheReadTokens:
+  en: "Cache"
+  zh: "缓存"
+outputTokens:
+  en: "Output"
+  zh: "输出"
+cacheHitRate:
+  en: "%@ cache hit"
+  zh: "缓存命中 %@"
+topModels:
+  en: "Top Models (Week)"
+  zh: "本周常用模型"
+noModelsYet:
+  en: "No model usage this week"
+  zh: "本周暂无模型用量"
+budgetTarget:
+  en: "Budget %@"
+  zh: "预算 %@"

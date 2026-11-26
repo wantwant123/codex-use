@@ -4,99 +4,111 @@ struct UsageToolCardView: View {
     let snapshot: UsageSnapshot
     let lastRefreshAt: Date?
     let refreshInterval: RefreshInterval
-    let onSettings: () -> Void
-    let onRefresh: () -> Void
+    let dailyBudget: Int
+    let weeklyBudget: Int
+    let tokenSpeed: TokenSpeedStore?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 11) {
             header
-            actions
-            quotaRows
-            tokenRows
+            quotaSection
+            tokenGrid
+            if snapshot.tool == .antigravity {
+                antigravityDetails
+            }
             footer
 
             if let message = snapshot.message, !message.isEmpty {
-                Text(verbatim: message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                        .padding(.top, 1)
+                    Text(verbatim: message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             }
         }
-        .frame(width: 310, alignment: .leading)
+        .panelCard(padding: 13)
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            Text("tool.codexName")
-                .font(.title3)
-                .fontWeight(.bold)
+        HStack(alignment: .center, spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(SurfaceStyle.accent(for: snapshot.tool).opacity(0.16))
+                    .frame(width: 28, height: 28)
+                Image(systemName: snapshot.tool.systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(SurfaceStyle.accent(for: snapshot.tool))
+            }
 
-            Spacer()
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(verbatim: snapshot.tool.displayName)
+                        .font(.headline)
 
-            Text(snapshot.status.title)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(.background.secondary, in: Capsule())
-                .overlay(
-                    Capsule()
-                        .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
+                    StatusPillView(
+                        title: sourceBadgeText,
+                        tint: SurfaceStyle.accent(for: snapshot.tool),
+                        showDot: false
+                    )
+                }
+
+                if let tokenSpeed {
+                    TokenSpeedInlineRow(tokenSpeed: tokenSpeed)
+                } else {
+                    Text("usage.budgetHint")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            StatusPillView(title: snapshot.status.title, tint: statusTint)
+        }
+    }
+
+    @ViewBuilder
+    private var quotaSection: some View {
+        if snapshot.tool == .antigravity {
+            antigravityQuotaSection
+        } else {
+            codexQuotaSection
+        }
+    }
+
+    private var codexQuotaSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if snapshot.hasWeeklyQuota {
+                HeroBatteryQuotaBox(
+                    titleKey: "usage.weeklyRemaining",
+                    percent: snapshot.weeklyRemainingPercent,
+                    subtitle: resetText(snapshot.weeklyResetAt),
+                    trailingBadge: snapshot.hasFiveHourQuota ? nil : String(localized: "usage.weeklyOnly")
                 )
-        }
-    }
-
-    private var actions: some View {
-        HStack(spacing: 8) {
-            DashboardButton(title: "menu.settings", systemImage: "gearshape", action: onSettings)
-            DashboardButton(title: "menu.refresh", systemImage: "arrow.clockwise", action: onRefresh)
-        }
-    }
-
-    private var quotaRows: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if snapshot.hasFiveHourQuota {
-                UsageBarRow(
-                    title: "usage.fiveHourRemaining",
-                    dotColor: remainingColor(snapshot.fiveHourRemainingPercent),
-                    fillColor: remainingColor(snapshot.fiveHourRemainingPercent),
-                    fillFraction: fraction(fromPercent: snapshot.fiveHourRemainingPercent),
-                    leadingText: percentLeftText(snapshot.fiveHourRemainingPercent),
-                    trailingText: resetText(snapshot.fiveHourResetAt)
+            } else if snapshot.hasFiveHourQuota {
+                HeroBatteryQuotaBox(
+                    titleKey: "usage.fiveHourRemaining",
+                    percent: snapshot.fiveHourRemainingPercent,
+                    subtitle: resetText(snapshot.fiveHourResetAt),
+                    trailingBadge: nil
                 )
             }
 
-            if snapshot.hasWeeklyQuota {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("usage.weeklyRemaining")
-                            .font(.headline)
-                        Spacer()
-                        Text(verbatim: UsageFormatters.percentText(snapshot.weeklyRemainingPercent))
-                            .font(.system(size: 32, weight: .semibold, design: .rounded))
-                            .monospacedDigit()
-                    }
-
-                    QuotaBatteryView(
-                        percent: snapshot.weeklyRemainingPercent,
-                        color: remainingColor(snapshot.weeklyRemainingPercent)
-                    )
-                    .accessibilityHidden(true)
-
-                    Text(verbatim: resetText(snapshot.weeklyResetAt))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    if !snapshot.hasFiveHourQuota {
-                        Text("usage.weeklyOnly")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .padding(14)
-                .background(.background.secondary, in: RoundedRectangle(cornerRadius: 18))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 18)
-                        .strokeBorder(.primary.opacity(0.08), lineWidth: 1)
+            if snapshot.hasFiveHourQuota && snapshot.hasWeeklyQuota {
+                CompactQuotaProgressRow(
+                    titleKey: "usage.fiveHourRemaining",
+                    percent: snapshot.fiveHourRemainingPercent,
+                    trailingText: resetText(snapshot.fiveHourResetAt)
                 )
             }
 
@@ -104,183 +116,369 @@ struct UsageToolCardView: View {
                 Text("usage.quotaUnavailable")
                     .font(.callout)
                     .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+                    .insetTile(padding: 10)
             }
         }
     }
 
-    private var tokenRows: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("usage.tokenUsage")
-                .font(.headline)
-            Text("usage.localTokenUsageHint")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+    private var antigravityQuotaSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if snapshot.hasFiveHourQuota || snapshot.hasWeeklyQuota {
+                HeroBatteryQuotaBox(
+                    titleKey: "usage.dailyBudgetRemaining",
+                    percent: snapshot.fiveHourRemainingPercent,
+                    subtitle: resetText(snapshot.fiveHourResetAt),
+                    trailingBadge: String(
+                        format: NSLocalizedString("usage.budgetTarget", comment: ""),
+                        UsageFormatters.compactTokenCountText(dailyBudget)
+                    )
+                )
 
-            ForEach(tokenMetrics) { metric in
-                UsageBarRow(
-                    title: LocalizedStringKey(metric.titleKey),
-                    dotColor: metric.color,
-                    fillColor: tokenFillColor,
-                    fillFraction: tokenFraction(metric.value),
-                    leadingText: tokenText(metric.value),
-                    trailingText: metric.trailingText
+                CompactQuotaProgressRow(
+                    titleKey: "usage.weeklyBudgetRemaining",
+                    percent: snapshot.weeklyRemainingPercent,
+                    trailingText: String(
+                        format: NSLocalizedString("usage.budgetTarget", comment: ""),
+                        UsageFormatters.compactTokenCountText(weeklyBudget)
+                    ) + " · " + resetText(snapshot.weeklyResetAt)
+                )
+            } else {
+                Text("usage.quotaUnavailable")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 10)
+                    .insetTile(padding: 10)
+            }
+        }
+    }
+
+    private var tokenGrid: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("usage.tokenUsage")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if snapshot.tool == .codex {
+                    Text("usage.localTokenUsageHint")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
+            }
+
+            HStack(spacing: 6) {
+                TokenMetricTile(
+                    titleKey: "usage.todayTokens",
+                    value: snapshot.dailyTokenUsage,
+                    accent: SurfaceStyle.accent(for: snapshot.tool)
+                )
+                TokenMetricTile(
+                    titleKey: "usage.weekTokens",
+                    value: snapshot.weeklyTokenUsage,
+                    accent: .blue
+                )
+                TokenMetricTile(
+                    titleKey: "usage.monthTokens",
+                    value: snapshot.monthlyTokenUsage,
+                    accent: .purple
                 )
             }
         }
     }
 
-    private var footer: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: UsageFormatters.updatedText(snapshot.updatedAt))
-            HStack {
-                Text(String(format: NSLocalizedString("usage.lastChecked", comment: ""), lastRefreshAt?.formatted(date: .omitted, time: .shortened) ?? "—"))
-                Spacer()
-                Text(String(format: NSLocalizedString("usage.nextUpdate", comment: ""), refreshInterval.title))
+    @ViewBuilder
+    private var antigravityDetails: some View {
+        if let breakdown = snapshot.tokenBreakdown, breakdown.totalTokens > 0 {
+            TokenBreakdownBarView(breakdown: breakdown)
+        }
+
+        if !snapshot.topModels.isEmpty {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("usage.topModels")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                HStack(spacing: 5) {
+                    ForEach(snapshot.topModels) { item in
+                        HStack(spacing: 4) {
+                            Text(verbatim: item.model)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Text(verbatim: UsageFormatters.compactTokenCountText(item.tokens))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .font(.caption2)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 4)
+                        .background(.primary.opacity(0.05), in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .strokeBorder(.primary.opacity(0.07), lineWidth: 0.5)
+                        )
+                    }
+                }
             }
         }
-        .font(.caption)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 6) {
+            Text(verbatim: UsageFormatters.updatedText(snapshot.updatedAt))
+            Text(verbatim: "·")
+                .foregroundStyle(.tertiary)
+            Text(String(
+                format: NSLocalizedString("usage.lastChecked", comment: ""),
+                lastRefreshAt?.formatted(date: .omitted, time: .shortened) ?? "—"
+            ))
+            Spacer(minLength: 4)
+            Text(verbatim: refreshInterval.title)
+                .foregroundStyle(.tertiary)
+        }
+        .font(.caption2.monospacedDigit())
         .foregroundStyle(.secondary)
-        .padding(.top, 2)
+        .lineLimit(1)
     }
 
-    private var tokenMetrics: [TokenMetric] {
-        [
-            TokenMetric(titleKey: "usage.todayTokens", value: snapshot.dailyTokenUsage, color: tokenFillColor),
-            TokenMetric(titleKey: "usage.weekTokens", value: snapshot.weeklyTokenUsage, color: tokenFillColor),
-            TokenMetric(titleKey: "usage.monthTokens", value: snapshot.monthlyTokenUsage, color: tokenFillColor),
-        ]
-    }
-
-    private var tokenFillColor: Color {
-        Color(red: 0.04, green: 0.42, blue: 0.95)
-    }
-
-    private var maxTokenUsage: Int {
-        max(tokenMetrics.compactMap(\.value).max() ?? 0, 1)
-    }
-
-    private func fraction(fromPercent percent: Double?) -> Double {
-        guard let percent else {
-            return 0
+    private var sourceBadgeText: String {
+        if snapshot.isBudgetEstimated {
+            return String(localized: "usage.budgetEstimatedBadge")
         }
-
-        return UsageMath.clampPercent(percent) / 100
+        return snapshot.status == .available
+            ? String(localized: "usage.liveBadge")
+            : String(localized: "usage.localBadge")
     }
 
-    private func tokenFraction(_ value: Int?) -> Double {
-        guard let value else {
-            return 0
+    private var statusTint: Color {
+        switch snapshot.status {
+        case .available: .green
+        case .stale: .orange
+        case .unavailable: .secondary
+        case .error: .red
         }
-
-        return min(max(Double(value) / Double(maxTokenUsage), 0), 1)
-    }
-
-    private func percentLeftText(_ percent: Double?) -> String {
-        String(format: NSLocalizedString("usage.percentLeft", comment: ""), UsageFormatters.percentText(percent))
     }
 
     private func resetText(_ date: Date?) -> String {
         guard let date else {
             return String(localized: "usage.resetUnknown")
         }
-
         guard date > Date() else {
             return String(localized: "usage.resetPending")
         }
-
         let countdown = UsageFormatters.resetCountdownText(until: date)
         return String(format: NSLocalizedString("usage.resetsIn", comment: ""), countdown)
     }
-
-    private func tokenText(_ value: Int?) -> String {
-        String(format: NSLocalizedString("usage.tokensValue", comment: ""), UsageFormatters.compactTokenCountText(value))
-    }
-
-    private func remainingColor(_ percent: Double?) -> Color {
-        guard let percent else {
-            return .secondary
-        }
-
-        let clamped = UsageMath.clampPercent(percent) / 100
-        return Color(
-            hue: 0.33 * clamped,
-            saturation: 0.84,
-            brightness: 0.82
-        )
-    }
 }
 
-private struct DashboardButton: View {
-    let title: LocalizedStringKey
-    let systemImage: String
-    let action: () -> Void
+private struct TokenSpeedInlineRow: View {
+    @ObservedObject var tokenSpeed: TokenSpeedStore
 
     var body: some View {
-        Button(action: action) {
-            Label(title, systemImage: systemImage)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
+        HStack(spacing: 4) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 8.5))
+                .foregroundStyle(tokenSpeed.sample != nil ? .orange : .secondary)
+            if tokenSpeed.sample != nil {
+                Text(verbatim: tokenSpeed.text)
+                    .monospacedDigit()
+            } else {
+                Text("tokenSpeed.waiting")
+            }
         }
-        .buttonStyle(.plain)
-        .background(.background.secondary, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color(nsColor: .separatorColor).opacity(0.45), lineWidth: 1)
-        )
+        .font(.caption2)
+        .foregroundStyle(.secondary)
+        .help("tokenSpeed.note")
     }
 }
 
-private struct UsageBarRow: View {
-    let title: LocalizedStringKey
-    let dotColor: Color
-    let fillColor: Color
-    let fillFraction: Double
-    let leadingText: String
+private struct HeroBatteryQuotaBox: View {
+    let titleKey: LocalizedStringKey
+    let percent: Double?
+    let subtitle: String
+    let trailingBadge: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(titleKey)
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(verbatim: UsageFormatters.percentText(percent))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(percent == nil ? Color.secondary : Color.primary)
+            }
+
+            QuotaBatteryView(
+                percent: percent,
+                color: SurfaceStyle.remainingColor(percent),
+                height: 40
+            )
+            .accessibilityHidden(true)
+
+            HStack(spacing: 6) {
+                Text(verbatim: subtitle)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if let trailingBadge {
+                    Text(verbatim: trailingBadge)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+        }
+        .insetTile(padding: 10, cornerRadius: 12)
+    }
+}
+
+private struct CompactQuotaProgressRow: View {
+    let titleKey: LocalizedStringKey
+    let percent: Double?
     let trailingText: String
+
+    private var fraction: Double {
+        guard let percent else { return 0 }
+        return UsageMath.clampPercent(percent) / 100
+    }
+
+    private var tint: Color {
+        SurfaceStyle.remainingColor(percent)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.headline)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Circle()
-                    .fill(dotColor)
-                    .frame(width: 7, height: 7)
+                    .fill(tint)
+                    .frame(width: 6, height: 6)
+                Text(titleKey)
+                    .font(.caption.weight(.semibold))
+                Spacer(minLength: 4)
+                Text(verbatim: UsageFormatters.percentText(percent))
+                    .font(.caption.weight(.bold).monospacedDigit())
+                Text(verbatim: "·")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(verbatim: trailingText)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color(nsColor: .separatorColor).opacity(0.10))
-
+                        .fill(.primary.opacity(0.08))
                     Capsule()
-                        .fill(fillColor)
-                        .frame(width: proxy.size.width * fillFraction)
+                        .fill(tint.gradient)
+                        .frame(width: proxy.size.width * fraction)
                 }
             }
-            .frame(height: 7)
-
-            HStack(alignment: .firstTextBaseline) {
-                Text(verbatim: leadingText)
-                Spacer()
-                Text(verbatim: trailingText)
-                    .multilineTextAlignment(.trailing)
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
+            .frame(height: 5)
         }
+        .insetTile(padding: 8, cornerRadius: 9)
     }
 }
 
-private struct TokenMetric: Identifiable {
-    var id: String { titleKey }
-    let titleKey: String
+private struct TokenMetricTile: View {
+    let titleKey: LocalizedStringKey
     let value: Int?
-    let color: Color
+    let accent: Color
 
-    var trailingText: String {
-        value == nil ? String(localized: "usage.noTokenData") : ""
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(accent.opacity(0.85))
+                    .frame(width: 5, height: 5)
+                Text(titleKey)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+
+            Text(verbatim: UsageFormatters.compactTokenCountText(value))
+                .font(.system(.callout, design: .rounded, weight: .bold))
+                .monospacedDigit()
+                .foregroundStyle(value == nil ? .secondary : .primary)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .insetTile(padding: 8, cornerRadius: 10)
+    }
+}
+
+private struct TokenBreakdownBarView: View {
+    let breakdown: TokenBreakdown
+
+    private var total: Double {
+        max(1, Double(breakdown.totalTokens))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("usage.tokenBreakdown")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if let hitRate = breakdown.cacheHitRatio {
+                    Text(String(
+                        format: NSLocalizedString("usage.cacheHitRate", comment: ""),
+                        UsageFormatters.percentText(hitRate * 100)
+                    ))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.teal)
+                }
+            }
+
+            GeometryReader { proxy in
+                let width = proxy.size.width
+                let inputW = width * Double(breakdown.inputTokens) / total
+                let cacheW = width * Double(breakdown.cacheReadTokens) / total
+                let outputW = width * Double(breakdown.outputTokens) / total
+
+                HStack(spacing: 1) {
+                    if inputW > 0 {
+                        Rectangle().fill(Color.blue).frame(width: max(2, inputW))
+                    }
+                    if cacheW > 0 {
+                        Rectangle().fill(Color.teal).frame(width: max(2, cacheW))
+                    }
+                    if outputW > 0 {
+                        Rectangle().fill(Color.purple).frame(width: max(2, outputW))
+                    }
+                }
+                .clipShape(Capsule())
+            }
+            .frame(height: 5)
+
+            HStack(spacing: 10) {
+                legendDot(color: .blue, labelKey: "usage.inputTokens", count: breakdown.inputTokens)
+                legendDot(color: .teal, labelKey: "usage.cacheReadTokens", count: breakdown.cacheReadTokens)
+                legendDot(color: .purple, labelKey: "usage.outputTokens", count: breakdown.outputTokens)
+                Spacer(minLength: 0)
+            }
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+        .insetTile(padding: 8, cornerRadius: 10)
+    }
+
+    private func legendDot(color: Color, labelKey: LocalizedStringKey, count: Int) -> some View {
+        HStack(spacing: 3) {
+            Circle().fill(color).frame(width: 5, height: 5)
+            Text(labelKey)
+            Text(verbatim: UsageFormatters.compactTokenCountText(count))
+                .foregroundStyle(.primary)
+        }
+        .lineLimit(1)
     }
 }

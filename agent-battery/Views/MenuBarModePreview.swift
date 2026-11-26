@@ -15,7 +15,7 @@ struct MenuBarModePreview: View {
             case .battery:
                 BatteryIcon(
                     percent: percent,
-                    height: 12,
+                    height: 11.5,
                     autoColor: settings.colorByUsage,
                     fillColor: .white,
                     lowColor: settings.usageColorLow,
@@ -24,19 +24,25 @@ struct MenuBarModePreview: View {
                     lowEdge: Double(settings.criticalThreshold),
                     midEdge: Double(settings.warningThreshold)
                 )
-                Text(percentText)
-                    .foregroundStyle(textColor)
+                if settings.showMenuBarPercent {
+                    Text(percentText)
+                        .foregroundStyle(textColor)
+                }
             case .tool:
-                Text("\(toolShortName) \(percentText)")
+                Text(settings.showMenuBarPercent ? "\(toolShortName) \(percentText)" : toolShortName)
                     .foregroundStyle(textColor)
             }
         }
-        .font(.system(size: 11, weight: .medium))
-        .padding(.horizontal, 6)
-        .padding(.vertical, 3)
+        .font(.system(size: 11, weight: .medium).monospacedDigit())
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3.5)
         .background(
-            RoundedRectangle(cornerRadius: 4, style: .continuous)
-                .fill(Color.black.opacity(0.55))
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.black.opacity(0.62))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
         )
     }
 
@@ -67,6 +73,15 @@ struct MenuBarModePreviewRow: View {
 
     private static let samples: [Double] = [8, 30, 80]
 
+    private var previewShortName: String {
+        switch settings.menuBarQuotaSource {
+        case .antigravity:
+            UsageTool.antigravity.shortName
+        case .codex, .both:
+            UsageTool.codex.shortName
+        }
+    }
+
     var body: some View {
         HStack(spacing: 6) {
             ForEach(Self.samples, id: \.self) { value in
@@ -74,7 +89,7 @@ struct MenuBarModePreviewRow: View {
                     settings: settings,
                     mode: mode,
                     percent: value,
-                    toolShortName: UsageTool.codex.shortName
+                    toolShortName: previewShortName
                 )
             }
         }

@@ -6,60 +6,64 @@ struct MenuBarPanelView: View {
     @ObservedObject var store: UsageStore
     @ObservedObject var traffic: ProxyTrafficStore
     @ObservedObject var tokenSpeed: TokenSpeedStore
+
+    @State private var choosingTimeZone = false
     @Environment(\.openWindow) private var openWindow
     @Environment(\.openSettings) private var openSettings
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            MenuBarClockView(settings: settings)
+        VStack(alignment: .leading, spacing: 10) {
+            topUtilityBar
 
-            HStack {
-                Text("tokenSpeed.title")
-                Spacer()
-                if tokenSpeed.sample != nil {
-                    Text(verbatim: tokenSpeed.text).monospacedDigit()
-                } else {
-                    Text("tokenSpeed.waiting").foregroundStyle(.secondary)
-                }
+            if choosingTimeZone {
+                TimeZonePickerDrawer(settings: settings, isPresented: $choosingTimeZone)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
-            .font(.caption)
-            .help("tokenSpeed.note")
 
-            Divider()
+            ToolSwitcherBar(
+                selectedTool: $settings.selectedTool,
+                store: store
+            )
 
             UsageToolCardView(
-                snapshot: store.snapshot(for: .codex),
+                snapshot: store.snapshot(for: settings.selectedTool),
                 lastRefreshAt: store.lastRefreshAt,
                 refreshInterval: settings.refreshInterval,
-                onSettings: showSettings,
-                onRefresh: store.refresh
+                dailyBudget: settings.antigravityDailyTokenBudget,
+                weeklyBudget: settings.antigravityWeeklyTokenBudget,
+                tokenSpeed: settings.selectedTool == .codex ? tokenSpeed : nil
             )
 
             if settings.trafficEnabled {
-                Divider()
                 ProxyTrafficSummaryView(store: traffic) {
                     dismiss()
                     openWindow(id: "traffic")
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
+        }
+        .padding(12)
+    }
 
-            Divider()
+    private var topUtilityBar: some View {
+        HStack(spacing: 6) {
+            MenuBarClockView(settings: settings, choosingTimeZone: $choosingTimeZone)
 
-            HStack {
-                Spacer()
+            Spacer(minLength: 4)
 
-                Button {
+            HStack(spacing: 4) {
+                TopIconButton(systemImage: "arrow.clockwise", helpKey: "menu.refresh") {
+                    store.refresh()
+                }
+                TopIconButton(systemImage: "gearshape", helpKey: "menu.settings") {
+                    showSettings()
+                }
+                TopIconButton(systemImage: "power", helpKey: "menu.quit", isDestructive: true) {
                     NSApplication.shared.terminate(nil)
-                } label: {
-                    Label("menu.quit", systemImage: "power")
                 }
             }
-            .buttonStyle(.borderless)
         }
-        .padding(14)
-        .background(Color(nsColor: .windowBackgroundColor).ignoresSafeArea())
     }
 
     private func showSettings() {
@@ -68,5 +72,99 @@ struct MenuBarPanelView: View {
         }) {
             openSettings()
         }
+    }
+}
+
+private struct ToolSwitcherBar: View {
+    @Binding var selectedTool: UsageTool
+    @ObservedObject var store: UsageStore
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(UsageTool.allCases) { tool in
+                let isSelected = selectedTool == tool
+                let snapshot = store.snapshot(for: tool)
+                let percent = snapshot.menuBarRemainingPercent
+                let accent = SurfaceStyle.accent(for: tool)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        selectedTool = tool
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: tool.systemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(isSelected ? accent : .secondary)
+
+                        Text(verbatim: tool.displayName)
+                            .font(.callout.weight(isSelected ? .semibold : .medium))
+                            .foregroundStyle(isSelected ? .primary : .secondary)
+                            .lineLimit(1)
+
+                        Spacer(minLength: 2)
+
+                        Text(verbatim: UsageFormatters.percentText(percent))
+                            .font(.caption2.weight(.semibold).monospacedDigit())
+                            .foregroundStyle(percent == nil ? .secondary : SurfaceStyle.remainingColor(percent))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                (percent == nil ? Color.secondary : SurfaceStyle.remainingColor(percent)).opacity(0.14),
+                                in: Capsule()
+                            )
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(isSelected ? Color.primary.opacity(0.09) : Color.clear)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(isSelected ? accent.opacity(0.40) : Color.clear, lineWidth: 1)
+                    )
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .strokeBorder(.primary.opacity(0.08), lineWidth: 0.75)
+        )
+    }
+}
+
+private struct TopIconButton: View {
+    let systemImage: String
+    let helpKey: LocalizedStringKey
+    var isDestructive: Bool = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(isHovered && isDestructive ? Color.red : (isHovered ? Color.primary : Color.secondary))
+                .frame(width: 26, height: 26)
+                .background(
+                    Circle()
+                        .fill(isHovered ? Color.primary.opacity(0.10) : Color.primary.opacity(0.04))
+                )
+                .overlay(
+                    Circle()
+                        .strokeBorder(.primary.opacity(0.08), lineWidth: 0.6)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(helpKey)
+        .accessibilityLabel(helpKey)
+        .onHover { isHovered = $0 }
     }
 }

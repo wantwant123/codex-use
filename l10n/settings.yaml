@@ -52,3 +52,48 @@ warningBelow:
 criticalBelow:
   en: "Critical below %lld%%"
   zh: "低于 %lld%% 时紧急"
+tabMenuBar:
+  en: "Menu Bar"
+  zh: "菜单栏"
+tabTools:
+  en: "Tools"
+  zh: "工具与预算"
+tabProxy:
+  en: "Proxy"
+  zh: "代理"
+tabGeneral:
+  en: "General"
+  zh: "通用"
+menuBarSource:
+  en: "Quota source"
+  zh: "状态栏额度源"
+menuBarSourceBoth:
+  en: "Both"
+  zh: "同时显示"
+sectionCodex:
+  en: "Codex"
+  zh: "Codex"
+sectionAntigravity:
+  en: "Antigravity"
+  zh: "Antigravity"
+dailyTokenBudget:
+  en: "Daily token budget"
+  zh: "每日 Token 预算"
+weeklyTokenBudget:
+  en: "Weekly token budget"
+  zh: "每周 Token 预算"
+antigravityBudgetHint:
+  en: "Antigravity has no public quota API. Remaining % is estimated locally from ~/.gemini/antigravity/brain transcripts against your custom budgets."
+  zh: "Antigravity 暂无公开额度接口，剩余百分比将根据本地会话日志与此处设置的自定义 Token 预算估算。"
+sessionsPath:
+  en: "Sessions folder"
+  zh: "会话目录"
+brainPath:
+  en: "Logs folder"
+  zh: "日志目录"
+resetDefault:
+  en: "Reset"
+  zh: "恢复默认"
+sectionVisibility:
+  en: "Visible Items"
+  zh: "状态栏附加项"

@@ -2,10 +2,14 @@ import Foundation
 
 enum UsageDefaults {
     static let codexSessionsPath = "~/.codex/sessions"
+    static let antigravityBrainPath = "~/.gemini/antigravity/brain"
+    static let antigravityDailyTokenBudget = 10_000_000
+    static let antigravityWeeklyTokenBudget = 50_000_000
 }
 
 enum UsageTool: String, CaseIterable, Codable, Hashable, Identifiable {
     case codex
+    case antigravity
 
     var id: String { rawValue }
 
@@ -13,6 +17,8 @@ enum UsageTool: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .codex:
             String(localized: "tool.codexName")
+        case .antigravity:
+            String(localized: "tool.antigravityName")
         }
     }
 
@@ -20,6 +26,8 @@ enum UsageTool: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .codex:
             String(localized: "tool.codexShortName")
+        case .antigravity:
+            String(localized: "tool.antigravityShortName")
         }
     }
 
@@ -27,6 +35,8 @@ enum UsageTool: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .codex:
             "terminal"
+        case .antigravity:
+            "sparkles"
         }
     }
 
@@ -34,8 +44,60 @@ enum UsageTool: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .codex:
             "codex"
+        case .antigravity:
+            "antigravity"
         }
     }
+}
+
+enum MenuBarQuotaSource: String, CaseIterable, Identifiable {
+    case codex
+    case antigravity
+    case both
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .codex:
+            String(localized: "tool.codexName")
+        case .antigravity:
+            String(localized: "tool.antigravityName")
+        case .both:
+            String(localized: "settings.menuBarSourceBoth")
+        }
+    }
+
+    var tools: [UsageTool] {
+        switch self {
+        case .codex: [.codex]
+        case .antigravity: [.antigravity]
+        case .both: [.codex, .antigravity]
+        }
+    }
+}
+
+struct TokenBreakdown: Codable, Equatable, Sendable {
+    let inputTokens: Int
+    let cacheReadTokens: Int
+    let outputTokens: Int
+
+    var totalTokens: Int {
+        inputTokens + cacheReadTokens + outputTokens
+    }
+
+    var cacheHitRatio: Double? {
+        let promptTotal = inputTokens + cacheReadTokens
+        guard promptTotal > 0 else { return nil }
+        return Double(cacheReadTokens) / Double(promptTotal)
+    }
+}
+
+struct ModelTokenUsage: Codable, Equatable, Identifiable, Sendable {
+    var id: String { model }
+
+    let model: String
+    let tokens: Int
 }
 
 enum UsageStatus: String, Codable, Hashable {
@@ -79,6 +141,76 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
     let updatedAt: Date?
     let status: UsageStatus
     let message: String?
+    let tokenBreakdown: TokenBreakdown?
+    let topModels: [ModelTokenUsage]
+    let isBudgetEstimated: Bool
+
+    init(
+        tool: UsageTool,
+        fiveHourRemainingPercent: Double?,
+        weeklyRemainingPercent: Double?,
+        fiveHourResetAt: Date?,
+        weeklyResetAt: Date?,
+        dailyTokenUsage: Int?,
+        weeklyTokenUsage: Int?,
+        monthlyTokenUsage: Int?,
+        updatedAt: Date?,
+        status: UsageStatus,
+        message: String?,
+        tokenBreakdown: TokenBreakdown? = nil,
+        topModels: [ModelTokenUsage] = [],
+        isBudgetEstimated: Bool = false
+    ) {
+        self.tool = tool
+        self.fiveHourRemainingPercent = fiveHourRemainingPercent
+        self.weeklyRemainingPercent = weeklyRemainingPercent
+        self.fiveHourResetAt = fiveHourResetAt
+        self.weeklyResetAt = weeklyResetAt
+        self.dailyTokenUsage = dailyTokenUsage
+        self.weeklyTokenUsage = weeklyTokenUsage
+        self.monthlyTokenUsage = monthlyTokenUsage
+        self.updatedAt = updatedAt
+        self.status = status
+        self.message = message
+        self.tokenBreakdown = tokenBreakdown
+        self.topModels = topModels
+        self.isBudgetEstimated = isBudgetEstimated
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case tool
+        case fiveHourRemainingPercent
+        case weeklyRemainingPercent
+        case fiveHourResetAt
+        case weeklyResetAt
+        case dailyTokenUsage
+        case weeklyTokenUsage
+        case monthlyTokenUsage
+        case updatedAt
+        case status
+        case message
+        case tokenBreakdown
+        case topModels
+        case isBudgetEstimated
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        tool = try container.decode(UsageTool.self, forKey: .tool)
+        fiveHourRemainingPercent = try container.decodeIfPresent(Double.self, forKey: .fiveHourRemainingPercent)
+        weeklyRemainingPercent = try container.decodeIfPresent(Double.self, forKey: .weeklyRemainingPercent)
+        fiveHourResetAt = try container.decodeIfPresent(Date.self, forKey: .fiveHourResetAt)
+        weeklyResetAt = try container.decodeIfPresent(Date.self, forKey: .weeklyResetAt)
+        dailyTokenUsage = try container.decodeIfPresent(Int.self, forKey: .dailyTokenUsage)
+        weeklyTokenUsage = try container.decodeIfPresent(Int.self, forKey: .weeklyTokenUsage)
+        monthlyTokenUsage = try container.decodeIfPresent(Int.self, forKey: .monthlyTokenUsage)
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        status = try container.decode(UsageStatus.self, forKey: .status)
+        message = try container.decodeIfPresent(String.self, forKey: .message)
+        tokenBreakdown = try container.decodeIfPresent(TokenBreakdown.self, forKey: .tokenBreakdown)
+        topModels = try container.decodeIfPresent([ModelTokenUsage].self, forKey: .topModels) ?? []
+        isBudgetEstimated = try container.decodeIfPresent(Bool.self, forKey: .isBudgetEstimated) ?? false
+    }
 
     static func unavailable(
         tool: UsageTool,
@@ -235,4 +367,21 @@ enum RefreshInterval: Int, CaseIterable, Identifiable {
 struct UsageDataConfiguration {
     let codexSessionsPath: String
     let staleInterval: TimeInterval
+    let antigravityBrainPath: String
+    let antigravityDailyTokenBudget: Int
+    let antigravityWeeklyTokenBudget: Int
+
+    init(
+        codexSessionsPath: String,
+        staleInterval: TimeInterval,
+        antigravityBrainPath: String = UsageDefaults.antigravityBrainPath,
+        antigravityDailyTokenBudget: Int = UsageDefaults.antigravityDailyTokenBudget,
+        antigravityWeeklyTokenBudget: Int = UsageDefaults.antigravityWeeklyTokenBudget
+    ) {
+        self.codexSessionsPath = codexSessionsPath
+        self.staleInterval = staleInterval
+        self.antigravityBrainPath = antigravityBrainPath
+        self.antigravityDailyTokenBudget = antigravityDailyTokenBudget
+        self.antigravityWeeklyTokenBudget = antigravityWeeklyTokenBudget
+    }
 }

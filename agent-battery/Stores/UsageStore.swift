@@ -8,6 +8,7 @@ final class UsageStore: ObservableObject {
 
     private let settings: AppSettings
     private let codexProvider = CodexUsageProvider()
+    private let antigravityProvider = AntigravityUsageProvider()
     private let snapshotCache: UsageSnapshotCache
     private let historyStore: UsageHistoryStore
     private let refreshQueue = DispatchQueue(label: "agent-battery.usage-store.refresh", qos: .userInitiated)
@@ -28,13 +29,26 @@ final class UsageStore: ObservableObject {
         snapshots = Self.initialSnapshots(from: snapshotCache)
         histories = Self.initialHistories(from: historyStore)
 
-        settings.objectWillChange
-            .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+        settings.$refreshInterval
+            .dropFirst()
+            .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.scheduleRefreshTimer()
                 self?.refresh()
             }
             .store(in: &cancellables)
+
+        Publishers.MergeMany(
+            settings.$codexSessionsPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            settings.$antigravityBrainPath.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            settings.$antigravityDailyTokenBudget.dropFirst().map { _ in () }.eraseToAnyPublisher(),
+            settings.$antigravityWeeklyTokenBudget.dropFirst().map { _ in () }.eraseToAnyPublisher()
+        )
+        .debounce(for: .milliseconds(250), scheduler: RunLoop.main)
+        .sink { [weak self] _ in
+            self?.refresh()
+        }
+        .store(in: &cancellables)
 
         scheduleRefreshTimer()
         refreshOnLaunch()
@@ -49,7 +63,12 @@ final class UsageStore: ObservableObject {
     }
 
     var primarySnapshot: UsageSnapshot {
-        snapshot(for: .codex)
+        switch settings.menuBarQuotaSource {
+        case .codex, .both:
+            snapshot(for: .codex)
+        case .antigravity:
+            snapshot(for: .antigravity)
+        }
     }
 
     func snapshot(for tool: UsageTool) -> UsageSnapshot {
@@ -82,14 +101,20 @@ final class UsageStore: ObservableObject {
             let codexRaw = autoreleasepool {
                 self.codexProvider.fetch(configuration: configuration)
             }
+            let antigravityRaw = autoreleasepool {
+                self.antigravityProvider.fetch(configuration: configuration)
+            }
             let now = Date()
 
             DispatchQueue.main.async {
                 var nextSnapshots = self.snapshots
                 var nextHistories = self.histories
                 let codexSnapshot = self.resolvedSnapshot(codexRaw, now: now)
+                let antigravitySnapshot = self.resolvedSnapshot(antigravityRaw, now: now)
                 nextSnapshots[.codex] = codexSnapshot
+                nextSnapshots[.antigravity] = antigravitySnapshot
                 nextHistories[.codex] = self.historyStore.record(codexSnapshot, at: now)
+                nextHistories[.antigravity] = self.historyStore.record(antigravitySnapshot, at: now)
                 self.histories = nextHistories
                 self.snapshots = nextSnapshots
                 self.lastRefreshAt = now

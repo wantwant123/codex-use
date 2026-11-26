@@ -18,7 +18,7 @@ struct AgentBatteryApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuBarPanelView(settings: settings, store: store, traffic: traffic, tokenSpeed: tokenSpeed)
-                .frame(width: 340)
+                .frame(width: 380)
                 .onAppear {
                     store.refresh()
                 }

@@ -7,6 +7,8 @@ import SwiftUI
 final class AppSettings: ObservableObject {
     private enum Keys {
         static let menuBarDisplayMode = "menuBarDisplayMode"
+        static let menuBarQuotaSource = "menuBarQuotaSource"
+        static let selectedTool = "selectedTool"
         static let showMenuBarPercent = "showMenuBarPercent"
         static let colorByUsage = "colorByUsage"
         static let refreshInterval = "refreshInterval"
@@ -14,6 +16,9 @@ final class AppSettings: ObservableObject {
         static let criticalThreshold = "criticalThreshold"
         static let launchAtLoginEnabled = "launchAtLoginEnabled"
         static let codexSessionsPath = "codexSessionsPath"
+        static let antigravityBrainPath = "antigravityBrainPath"
+        static let antigravityDailyTokenBudget = "antigravityDailyTokenBudget"
+        static let antigravityWeeklyTokenBudget = "antigravityWeeklyTokenBudget"
         static let usageColorLow = "usageColorLow"
         static let usageColorMid = "usageColorMid"
         static let usageColorHigh = "usageColorHigh"
@@ -56,6 +61,14 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(menuBarDisplayMode.rawValue, forKey: Keys.menuBarDisplayMode) }
     }
 
+    @Published var menuBarQuotaSource: MenuBarQuotaSource {
+        didSet { defaults.set(menuBarQuotaSource.rawValue, forKey: Keys.menuBarQuotaSource) }
+    }
+
+    @Published var selectedTool: UsageTool {
+        didSet { defaults.set(selectedTool.rawValue, forKey: Keys.selectedTool) }
+    }
+
     @Published var showMenuBarPercent: Bool {
         didSet { defaults.set(showMenuBarPercent, forKey: Keys.showMenuBarPercent) }
     }
@@ -86,6 +99,18 @@ final class AppSettings: ObservableObject {
         didSet { defaults.set(codexSessionsPath, forKey: Keys.codexSessionsPath) }
     }
 
+    @Published var antigravityBrainPath: String {
+        didSet { defaults.set(antigravityBrainPath, forKey: Keys.antigravityBrainPath) }
+    }
+
+    @Published var antigravityDailyTokenBudget: Int {
+        didSet { defaults.set(antigravityDailyTokenBudget, forKey: Keys.antigravityDailyTokenBudget) }
+    }
+
+    @Published var antigravityWeeklyTokenBudget: Int {
+        didSet { defaults.set(antigravityWeeklyTokenBudget, forKey: Keys.antigravityWeeklyTokenBudget) }
+    }
+
     @Published var usageColorLowHex: String {
         didSet { defaults.set(usageColorLowHex, forKey: Keys.usageColorLow) }
     }
@@ -114,6 +139,12 @@ final class AppSettings: ObservableObject {
         menuBarDisplayMode = MenuBarDisplayMode(
             rawValue: defaults.string(forKey: Keys.menuBarDisplayMode) ?? ""
         ) ?? .battery
+        menuBarQuotaSource = MenuBarQuotaSource(
+            rawValue: defaults.string(forKey: Keys.menuBarQuotaSource) ?? ""
+        ) ?? .codex
+        selectedTool = UsageTool(
+            rawValue: defaults.string(forKey: Keys.selectedTool) ?? ""
+        ) ?? .codex
         showMenuBarPercent = Self.bool(defaults, Keys.showMenuBarPercent, defaultValue: true)
         colorByUsage = Self.bool(defaults, Keys.colorByUsage, defaultValue: true)
         refreshInterval = RefreshInterval(
@@ -128,6 +159,19 @@ final class AppSettings: ObservableObject {
         )
         launchAtLoginMessage = nil
         codexSessionsPath = defaults.string(forKey: Keys.codexSessionsPath) ?? UsageDefaults.codexSessionsPath
+        antigravityBrainPath = defaults.string(forKey: Keys.antigravityBrainPath) ?? UsageDefaults.antigravityBrainPath
+        antigravityDailyTokenBudget = Self.int(
+            defaults,
+            Keys.antigravityDailyTokenBudget,
+            defaultValue: UsageDefaults.antigravityDailyTokenBudget,
+            range: 100_000...500_000_000
+        )
+        antigravityWeeklyTokenBudget = Self.int(
+            defaults,
+            Keys.antigravityWeeklyTokenBudget,
+            defaultValue: UsageDefaults.antigravityWeeklyTokenBudget,
+            range: 500_000...2_000_000_000
+        )
         usageColorLowHex = defaults.string(forKey: Keys.usageColorLow) ?? UsageLevelColor.low.defaultHex
         usageColorMidHex = defaults.string(forKey: Keys.usageColorMid) ?? UsageLevelColor.mid.defaultHex
         usageColorHighHex = defaults.string(forKey: Keys.usageColorHigh) ?? UsageLevelColor.high.defaultHex
@@ -136,7 +180,10 @@ final class AppSettings: ObservableObject {
     var dataConfiguration: UsageDataConfiguration {
         UsageDataConfiguration(
             codexSessionsPath: codexSessionsPath,
-            staleInterval: 10 * 60
+            staleInterval: 10 * 60,
+            antigravityBrainPath: antigravityBrainPath,
+            antigravityDailyTokenBudget: antigravityDailyTokenBudget,
+            antigravityWeeklyTokenBudget: antigravityWeeklyTokenBudget
         )
     }
 

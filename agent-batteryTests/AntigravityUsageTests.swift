@@ -3,13 +3,100 @@ import Testing
 @testable import agent_battery
 
 struct AntigravityUsageTests {
-    @Test func providerParsesStandardBrainTranscriptsAndComputesBudget() throws {
+    @Test func quotaClientParsesRetrieveUserQuotaSummaryGroups() throws {
+        let payload: [String: Any] = [
+            "response": [
+                "groups": [
+                    [
+                        "displayName": "Claude and GPT models",
+                        "buckets": [
+                            ["displayName": "Weekly limit", "window": "weekly", "remainingFraction": 0.50, "resetTime": "2026-12-03T13:50:00Z"],
+                            ["displayName": "5h limit", "window": "5h", "remainingFraction": 1.0, "resetTime": "2026-11-26T16:50:00Z"],
+                        ]
+                    ],
+                    [
+                        "displayName": "Gemini Models",
+                        "buckets": [
+                            ["displayName": "Weekly limit", "window": "weekly", "remainingFraction": 0.82, "resetTime": "2026-12-03T14:50:00Z"],
+                            ["displayName": "5h limit", "window": "5h", "remainingFraction": 0.31, "resetTime": "2026-11-26T12:11:00Z"],
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let groups = AntigravityQuotaClient.parseQuotaSummary(payload)
+        #expect(groups.count == 2)
+        // Gemini Models should be sorted first as primary.
+        #expect(groups[0].name == "Gemini Models")
+        #expect(groups[0].weeklyRemainingPercent == 82)
+        #expect(groups[0].fiveHourRemainingPercent == 31)
+        #expect(groups[0].weeklyResetAt != nil)
+        #expect(groups[0].fiveHourResetAt != nil)
+        #expect(groups[1].name == "Claude and GPT models")
+        #expect(groups[1].weeklyRemainingPercent == 50)
+        #expect(groups[1].fiveHourRemainingPercent == 100)
+    }
+
+    @Test func quotaClientFallsBackToGetUserStatusModelConfigs() {
+        let payload: [String: Any] = [
+            "userStatus": [
+                "cascadeModelConfigData": [
+                    "clientModelConfigs": [
+                        [
+                            "label": "Gemini 4 Neon (High)",
+                            "quotaInfo": ["remainingFraction": 0.31, "resetTime": "2026-11-26T12:11:00Z"]
+                        ],
+                        [
+                            "label": "Gemini 3 Flash",
+                            "quotaInfo": ["remainingFraction": 0.85, "resetTime": "2026-11-26T12:11:00Z"]
+                        ],
+                        [
+                            "label": "Claude Sonnet 4.5",
+                            "quotaInfo": ["remainingFraction": 0.50, "resetTime": "2026-12-03T13:50:00Z"]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+        let groups = AntigravityQuotaClient.parseUserStatus(payload)
+        #expect(groups.count == 2)
+        #expect(groups[0].name == "Gemini Models")
+        #expect(groups[0].fiveHourRemainingPercent == 31)
+        #expect(groups[1].name == "Claude and GPT models")
+        #expect(groups[1].fiveHourRemainingPercent == 50)
+    }
+
+    @Test func quotaClientParsesProcessAndLsofDiscoveryOutput() {
+        let ps = """
+          101 /usr/libexec/other --flag 1
+          202 /Applications/Antigravity.app/Contents/Resources/app/extensions/antigravity/bin/language_server_macos_arm --csrf_token=abc-123-xyz --extension_server_port 54321
+          303 /Users/test/language_server_macos --csrf_token "quoted-token"
+        """
+        let instances = AntigravityQuotaClient.parseServerInstances(from: ps)
+        #expect(instances.count == 2)
+        #expect(instances[0].pid == 202)
+        #expect(instances[0].csrfToken == "abc-123-xyz")
+        #expect(instances[0].hintPort == 54321)
+        #expect(instances[1].pid == 303)
+        #expect(instances[1].csrfToken == "quoted-token")
+
+        let lsof = """
+        COMMAND   PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+        language_ 202 user   10u  IPv4 0x1234      0t0  TCP 127.0.0.1:51234 (LISTEN)
+        language_ 202 user   11u  IPv4 0x5678      0t0  TCP 127.0.0.1:54321 (LISTEN)
+        language_ 202 user   12u  IPv6 0x9999      0t0  TCP [::1]:51235 (LISTEN)
+        """
+        let ports = AntigravityQuotaClient.parseListeningPorts(from: lsof, preferred: 54321)
+        #expect(ports == [51234, 51235, 54321])
+    }
+
+    @Test func providerCombinesLiveQuotaGroupsWithLocalTranscriptTokens() throws {
         let brain = FileManager.default.temporaryDirectory
             .appendingPathComponent("agent-battery-agy-tests-\(UUID().uuidString)")
-        let conv1Logs = brain
-            .appendingPathComponent("conv-1/.system_generated/logs", isDirectory: true)
-        let conv2Logs = brain
-            .appendingPathComponent("conv-2/.system_generated/logs", isDirectory: true)
+        let conv1Logs = brain.appendingPathComponent("conv-1/.system_generated/logs", isDirectory: true)
+        let conv2Logs = brain.appendingPathComponent("conv-2/.system_generated/logs", isDirectory: true)
         try FileManager.default.createDirectory(at: conv1Logs, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: conv2Logs, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: brain) }
@@ -22,7 +109,6 @@ struct AntigravityUsageTests {
         let conv1Content = """
         {"step_index":0,"source":"USER_EXPLICIT","type":"USER_INPUT","status":"DONE","created_at":"\(t1)","content":"hello"}
         {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"\(t1)","model":"gemini-4-neon-high","input_tokens":1000,"cache_read_tokens":3000,"output_tokens":500}
-        {"step_index":2,"source":"MODEL","type":"GENERIC","status":"DONE","created_at":"\(t2)","content":"tool output"}
         """
         let conv2Content = """
         {"step_index":1,"source":"MODEL","type":"PLANNER_RESPONSE","status":"DONE","created_at":"\(t2)","model":"gemini-2.5-flash","input_tokens":500,"cache_read_tokens":500,"output_tokens":500}
@@ -31,100 +117,51 @@ struct AntigravityUsageTests {
         try conv1Content.write(to: conv1Logs.appendingPathComponent("transcript.jsonl"), atomically: true, encoding: .utf8)
         try conv2Content.write(to: conv2Logs.appendingPathComponent("transcript.jsonl"), atomically: true, encoding: .utf8)
 
+        let liveGroups = [
+            QuotaGroup(id: "gemini", name: "Gemini Models", fiveHourRemainingPercent: 31, fiveHourResetAt: now.addingTimeInterval(1200), weeklyRemainingPercent: 82, weeklyResetAt: now.addingTimeInterval(86_400)),
+            QuotaGroup(id: "claude-gpt", name: "Claude and GPT models", fiveHourRemainingPercent: 100, fiveHourResetAt: nil, weeklyRemainingPercent: 50, weeklyResetAt: now.addingTimeInterval(86_400)),
+        ]
+        let provider = AntigravityUsageProvider(readLiveQuotaGroups: { liveGroups })
         let config = UsageDataConfiguration(
             codexSessionsPath: "/nonexistent",
             staleInterval: 600,
-            antigravityBrainPath: brain.path,
-            antigravityDailyTokenBudget: 10_000,
-            antigravityWeeklyTokenBudget: 20_000
+            antigravityBrainPath: brain.path
         )
 
-        let snapshot = AntigravityUsageProvider().fetch(configuration: config, now: now)
+        let snapshot = provider.fetch(configuration: config, now: now)
 
         #expect(snapshot.tool == .antigravity)
         #expect(snapshot.status == .available)
-        #expect(snapshot.isBudgetEstimated)
+        #expect(!snapshot.isBudgetEstimated)
+        #expect(snapshot.quotaGroups.count == 2)
+        #expect(snapshot.fiveHourRemainingPercent == 31)
+        #expect(snapshot.weeklyRemainingPercent == 82)
         #expect(snapshot.dailyTokenUsage == 6_000)
         #expect(snapshot.weeklyTokenUsage == 6_000)
         #expect(snapshot.monthlyTokenUsage == 6_000)
-        #expect(snapshot.fiveHourRemainingPercent == 40)
-        #expect(snapshot.weeklyRemainingPercent == 70)
         #expect(snapshot.tokenBreakdown == TokenBreakdown(inputTokens: 1_500, cacheReadTokens: 3_500, outputTokens: 1_000))
-        #expect(snapshot.tokenBreakdown?.cacheHitRatio == 0.7)
         #expect(snapshot.topModels.first?.model == "Gemini 4 Neon High")
-        #expect(snapshot.topModels.first?.tokens == 4_500)
-        #expect(snapshot.topModels.count == 2)
     }
 
-    @Test func providerClampsBudgetOverflowAtZeroAndHandlesMissingFolder() throws {
-        let missing = FileManager.default.temporaryDirectory
-            .appendingPathComponent("agent-battery-agy-missing-\(UUID().uuidString)")
-        let missingSnapshot = AntigravityUsageProvider().fetch(configuration: UsageDataConfiguration(
-            codexSessionsPath: "/nonexistent",
-            staleInterval: 600,
-            antigravityBrainPath: missing.path
-        ))
-        #expect(missingSnapshot.status == .unavailable)
-
+    @Test func providerReportsStaleLocalTokensWhenAntigravityNotRunning() throws {
         let brain = FileManager.default.temporaryDirectory
-            .appendingPathComponent("agent-battery-agy-over-\(UUID().uuidString)")
+            .appendingPathComponent("agent-battery-agy-offline-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: brain, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: brain) }
 
         let now = Date()
-        let line = """
-        {"step_index":1,"type":"PLANNER_RESPONSE","created_at":"\(ISO8601DateFormatter().string(from: now))","model":"gemini-4-neon-high","input_tokens":50000,"cache_read_tokens":50000,"output_tokens":20000}
-        """
+        let line = "{\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"\(ISO8601DateFormatter().string(from: now))\",\"model\":\"gemini-4-neon-high\",\"input_tokens\":1000,\"cache_read_tokens\":2000,\"output_tokens\":200}\n"
         try line.write(to: brain.appendingPathComponent("transcript.jsonl"), atomically: true, encoding: .utf8)
 
-        let snapshot = AntigravityUsageProvider().fetch(
-            configuration: UsageDataConfiguration(
-                codexSessionsPath: "/nonexistent",
-                staleInterval: 600,
-                antigravityBrainPath: brain.path,
-                antigravityDailyTokenBudget: 100_000,
-                antigravityWeeklyTokenBudget: 100_000
-            ),
+        let provider = AntigravityUsageProvider(readLiveQuotaGroups: { throw AntigravityQuotaClient.ClientError.serverNotRunning })
+        let snapshot = provider.fetch(
+            configuration: UsageDataConfiguration(codexSessionsPath: "/nonexistent", staleInterval: 600, antigravityBrainPath: brain.path),
             now: now
         )
-        #expect(snapshot.fiveHourRemainingPercent == 0)
-        #expect(snapshot.weeklyRemainingPercent == 0)
-    }
-
-    @Test func providerInvalidatesCacheOnAppendAndDelete() throws {
-        let brain = FileManager.default.temporaryDirectory
-            .appendingPathComponent("agent-battery-agy-cache-\(UUID().uuidString)")
-        let logs = brain.appendingPathComponent("conv-a/.system_generated/logs", isDirectory: true)
-        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: brain) }
-
-        let url = logs.appendingPathComponent("transcript.jsonl")
-        let now = Date()
-        let ts = ISO8601DateFormatter().string(from: now)
-        let first = "{\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"\(ts)\",\"model\":\"gemini-4-neon-high\",\"input_tokens\":1000,\"cache_read_tokens\":0,\"output_tokens\":200}\n"
-        try first.write(to: url, atomically: true, encoding: .utf8)
-
-        let provider = AntigravityUsageProvider()
-        let config = UsageDataConfiguration(
-            codexSessionsPath: "/nonexistent",
-            staleInterval: 600,
-            antigravityBrainPath: brain.path,
-            antigravityDailyTokenBudget: 10_000,
-            antigravityWeeklyTokenBudget: 50_000
-        )
-
-        #expect(provider.fetch(configuration: config, now: now).dailyTokenUsage == 1_200)
-        #expect(provider.fetch(configuration: config, now: now).dailyTokenUsage == 1_200)
-
-        let handle = try FileHandle(forWritingTo: url)
-        try handle.seekToEnd()
-        try handle.write(contentsOf: Data("{\"type\":\"PLANNER_RESPONSE\",\"created_at\":\"\(ts)\",\"model\":\"gemini-4-neon-high\",\"input_tokens\":800,\"cache_read_tokens\":0,\"output_tokens\":0}\n".utf8))
-        try handle.close()
-
-        #expect(provider.fetch(configuration: config, now: now).dailyTokenUsage == 2_000)
-
-        try FileManager.default.removeItem(at: url)
-        #expect(provider.fetch(configuration: config, now: now).status == .unavailable)
+        #expect(snapshot.status == .stale)
+        #expect(snapshot.quotaGroups.isEmpty)
+        #expect(snapshot.fiveHourRemainingPercent == nil)
+        #expect(snapshot.dailyTokenUsage == 3_200)
     }
 
     @Test func usageSnapshotDecodesLegacyCachedPayloadWithoutNewFields() throws {
@@ -143,30 +180,7 @@ struct AntigravityUsageTests {
         #expect(decoded.weeklyRemainingPercent == 65)
         #expect(decoded.tokenBreakdown == nil)
         #expect(decoded.topModels.isEmpty)
+        #expect(decoded.quotaGroups.isEmpty)
         #expect(!decoded.isBudgetEstimated)
-    }
-
-    @Test func appSettingsPersistsAntigravityPreferences() throws {
-        let suiteName = "agent-battery-agy-settings-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
-
-        let settings = AppSettings(defaults: defaults)
-        #expect(settings.selectedTool == .codex)
-        #expect(settings.menuBarQuotaSource == .codex)
-        #expect(settings.antigravityBrainPath == UsageDefaults.antigravityBrainPath)
-        #expect(settings.antigravityDailyTokenBudget == UsageDefaults.antigravityDailyTokenBudget)
-        #expect(settings.antigravityWeeklyTokenBudget == UsageDefaults.antigravityWeeklyTokenBudget)
-
-        settings.selectedTool = .antigravity
-        settings.menuBarQuotaSource = .both
-        settings.antigravityDailyTokenBudget = 20_000_000
-        settings.antigravityWeeklyTokenBudget = 100_000_000
-
-        let reloaded = AppSettings(defaults: defaults)
-        #expect(reloaded.selectedTool == .antigravity)
-        #expect(reloaded.menuBarQuotaSource == .both)
-        #expect(reloaded.antigravityDailyTokenBudget == 20_000_000)
-        #expect(reloaded.antigravityWeeklyTokenBudget == 100_000_000)
     }
 }

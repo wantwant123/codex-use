@@ -6,101 +6,143 @@ final class AntigravityUsageProvider {
     private let plannerResponseMarker = Data("\"PLANNER_RESPONSE\"".utf8)
     private let fetchLock = NSLock()
     private var fileCache: [URL: CachedTranscriptStats] = [:]
+    private let readLiveQuotaGroups: () throws -> [QuotaGroup]
+
+    init(readLiveQuotaGroups: (() throws -> [QuotaGroup])? = nil) {
+        if let readLiveQuotaGroups {
+            self.readLiveQuotaGroups = readLiveQuotaGroups
+        } else {
+            let client = AntigravityQuotaClient()
+            self.readLiveQuotaGroups = {
+                try client.fetchQuotaGroups()
+            }
+        }
+    }
 
     func fetch(configuration: UsageDataConfiguration, now: Date = Date()) -> UsageSnapshot {
         fetchLock.lock()
         defer { fetchLock.unlock() }
 
-        let path = NSString(string: configuration.antigravityBrainPath).expandingTildeInPath
-        let rootURL = URL(fileURLWithPath: path)
+        let liveGroups = (try? readLiveQuotaGroups()) ?? []
+        let localTokens = readLocalTokenSummary(
+            brainPath: configuration.antigravityBrainPath,
+            now: now
+        )
 
-        do {
-            let transcripts = try transcriptFiles(from: rootURL)
-            guard !transcripts.isEmpty else {
-                return .unavailable(
-                    tool: .antigravity,
-                    message: String(
-                        format: NSLocalizedString("provider.antigravityNoLogs", comment: ""),
-                        configuration.antigravityBrainPath
-                    )
-                )
-            }
-
-            let calendar = Calendar.current
-            let dayInterval = calendar.dateInterval(of: .day, for: now)
-            let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now)
-            let monthInterval = calendar.dateInterval(of: .month, for: now)
-            let intervals = [dayInterval, weekInterval, monthInterval]
-            let earliestStart = intervals.compactMap { $0?.start }.min() ?? .distantFuture
-
-            let relevant = transcripts.filter { $0.modifiedAt >= earliestStart }
-            let relevantURLs = Set(relevant.map(\.url))
-            fileCache = fileCache.filter { relevantURLs.contains($0.key) }
-
-            var dailyTokens = 0
-            var weeklyTokens = 0
-            var monthlyTokens = 0
-            var dailyInput = 0
-            var dailyCacheRead = 0
-            var dailyOutput = 0
-            var weeklyModelTotals: [String: Int] = [:]
-            var latestEventAt: Date?
-
-            for file in relevant {
-                let stats = try cachedOrParsedStats(for: file.url, intervals: intervals)
-                dailyTokens += stats.dailyTokens
-                weeklyTokens += stats.weeklyTokens
-                monthlyTokens += stats.monthlyTokens
-                dailyInput += stats.dailyInput
-                dailyCacheRead += stats.dailyCacheRead
-                dailyOutput += stats.dailyOutput
-                for (model, count) in stats.weeklyModelTotals {
-                    weeklyModelTotals[model, default: 0] += count
-                }
-                if let fileLatest = stats.latestEventAt,
-                   latestEventAt == nil || fileLatest > latestEventAt! {
-                    latestEventAt = fileLatest
-                }
-            }
-
-            let dailyBudget = max(1, configuration.antigravityDailyTokenBudget)
-            let weeklyBudget = max(1, configuration.antigravityWeeklyTokenBudget)
-            let dailyRemaining = UsageMath.clampPercent(Double(max(0, dailyBudget - dailyTokens)) * 100.0 / Double(dailyBudget))
-            let weeklyRemaining = UsageMath.clampPercent(Double(max(0, weeklyBudget - weeklyTokens)) * 100.0 / Double(weeklyBudget))
-
-            let breakdown = TokenBreakdown(
-                inputTokens: dailyInput,
-                cacheReadTokens: dailyCacheRead,
-                outputTokens: dailyOutput
-            )
-            let topModels = weeklyModelTotals
-                .sorted { lhs, rhs in
-                    lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
-                }
-                .prefix(3)
-                .map { ModelTokenUsage(model: $0.key, tokens: $0.value) }
-
-            let updatedAt = latestEventAt ?? transcripts.first?.modifiedAt ?? now
-
+        if !liveGroups.isEmpty {
+            let primary = liveGroups[0]
             return UsageSnapshot(
                 tool: .antigravity,
-                fiveHourRemainingPercent: dailyRemaining,
-                weeklyRemainingPercent: weeklyRemaining,
-                fiveHourResetAt: dayInterval?.end,
-                weeklyResetAt: weekInterval?.end,
-                dailyTokenUsage: dailyTokens,
-                weeklyTokenUsage: weeklyTokens,
-                monthlyTokenUsage: monthlyTokens,
-                updatedAt: updatedAt,
+                fiveHourRemainingPercent: primary.fiveHourRemainingPercent,
+                weeklyRemainingPercent: primary.weeklyRemainingPercent,
+                fiveHourResetAt: primary.fiveHourResetAt,
+                weeklyResetAt: primary.weeklyResetAt,
+                dailyTokenUsage: localTokens?.dailyTokens,
+                weeklyTokenUsage: localTokens?.weeklyTokens,
+                monthlyTokenUsage: localTokens?.monthlyTokens,
+                updatedAt: now,
                 status: .available,
                 message: nil,
-                tokenBreakdown: breakdown,
-                topModels: topModels,
-                isBudgetEstimated: true
+                tokenBreakdown: localTokens?.breakdown,
+                topModels: localTokens?.topModels ?? [],
+                quotaGroups: liveGroups,
+                isBudgetEstimated: false
             )
-        } catch {
-            return .error(tool: .antigravity, message: error.localizedDescription)
         }
+
+        if let localTokens {
+            return UsageSnapshot(
+                tool: .antigravity,
+                fiveHourRemainingPercent: nil,
+                weeklyRemainingPercent: nil,
+                fiveHourResetAt: nil,
+                weeklyResetAt: nil,
+                dailyTokenUsage: localTokens.dailyTokens,
+                weeklyTokenUsage: localTokens.weeklyTokens,
+                monthlyTokenUsage: localTokens.monthlyTokens,
+                updatedAt: localTokens.latestEventAt ?? now,
+                status: .stale,
+                message: String(localized: "provider.antigravityLiveUnavailable"),
+                tokenBreakdown: localTokens.breakdown,
+                topModels: localTokens.topModels,
+                quotaGroups: [],
+                isBudgetEstimated: false
+            )
+        }
+
+        return .unavailable(
+            tool: .antigravity,
+            message: String(localized: "provider.antigravityLiveUnavailable")
+        )
+    }
+
+    private func readLocalTokenSummary(brainPath: String, now: Date) -> LocalTokenSummary? {
+        let path = NSString(string: brainPath).expandingTildeInPath
+        let rootURL = URL(fileURLWithPath: path)
+
+        guard let transcripts = try? transcriptFiles(from: rootURL), !transcripts.isEmpty else {
+            return nil
+        }
+
+        let calendar = Calendar.current
+        let dayInterval = calendar.dateInterval(of: .day, for: now)
+        let weekInterval = calendar.dateInterval(of: .weekOfYear, for: now)
+        let monthInterval = calendar.dateInterval(of: .month, for: now)
+        let intervals = [dayInterval, weekInterval, monthInterval]
+        let earliestStart = intervals.compactMap { $0?.start }.min() ?? .distantFuture
+
+        let relevant = transcripts.filter { $0.modifiedAt >= earliestStart }
+        let relevantURLs = Set(relevant.map(\.url))
+        fileCache = fileCache.filter { relevantURLs.contains($0.key) }
+
+        var dailyTokens = 0
+        var weeklyTokens = 0
+        var monthlyTokens = 0
+        var dailyInput = 0
+        var dailyCacheRead = 0
+        var dailyOutput = 0
+        var weeklyModelTotals: [String: Int] = [:]
+        var latestEventAt: Date?
+
+        for file in relevant {
+            guard let stats = try? cachedOrParsedStats(for: file.url, intervals: intervals) else {
+                continue
+            }
+            dailyTokens += stats.dailyTokens
+            weeklyTokens += stats.weeklyTokens
+            monthlyTokens += stats.monthlyTokens
+            dailyInput += stats.dailyInput
+            dailyCacheRead += stats.dailyCacheRead
+            dailyOutput += stats.dailyOutput
+            for (model, count) in stats.weeklyModelTotals {
+                weeklyModelTotals[model, default: 0] += count
+            }
+            if let fileLatest = stats.latestEventAt,
+               latestEventAt == nil || fileLatest > latestEventAt! {
+                latestEventAt = fileLatest
+            }
+        }
+
+        let breakdown = TokenBreakdown(
+            inputTokens: dailyInput,
+            cacheReadTokens: dailyCacheRead,
+            outputTokens: dailyOutput
+        )
+        let topModels = weeklyModelTotals
+            .sorted { lhs, rhs in
+                lhs.value == rhs.value ? lhs.key < rhs.key : lhs.value > rhs.value
+            }
+            .prefix(3)
+            .map { ModelTokenUsage(model: $0.key, tokens: $0.value) }
+
+        return LocalTokenSummary(
+            dailyTokens: dailyTokens,
+            weeklyTokens: weeklyTokens,
+            monthlyTokens: monthlyTokens,
+            breakdown: breakdown,
+            topModels: topModels,
+            latestEventAt: latestEventAt ?? transcripts.first?.modifiedAt
+        )
     }
 
     private func transcriptFiles(from rootURL: URL) throws -> [TranscriptFile] {
@@ -292,6 +334,15 @@ final class AntigravityUsageProvider {
 private struct TranscriptFile {
     let url: URL
     let modifiedAt: Date
+}
+
+private struct LocalTokenSummary {
+    let dailyTokens: Int
+    let weeklyTokens: Int
+    let monthlyTokens: Int
+    let breakdown: TokenBreakdown
+    let topModels: [ModelTokenUsage]
+    let latestEventAt: Date?
 }
 
 private struct ParsedTranscriptStats {

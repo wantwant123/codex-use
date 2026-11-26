@@ -100,6 +100,23 @@ struct ModelTokenUsage: Codable, Equatable, Identifiable, Sendable {
     let tokens: Int
 }
 
+struct QuotaGroup: Codable, Equatable, Identifiable, Sendable {
+    let id: String
+    let name: String
+    let fiveHourRemainingPercent: Double?
+    let fiveHourResetAt: Date?
+    let weeklyRemainingPercent: Double?
+    let weeklyResetAt: Date?
+
+    var hasFiveHourQuota: Bool {
+        fiveHourRemainingPercent != nil || fiveHourResetAt != nil
+    }
+
+    var hasWeeklyQuota: Bool {
+        weeklyRemainingPercent != nil || weeklyResetAt != nil
+    }
+}
+
 enum UsageStatus: String, Codable, Hashable {
     case available
     case unavailable
@@ -143,6 +160,7 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
     let message: String?
     let tokenBreakdown: TokenBreakdown?
     let topModels: [ModelTokenUsage]
+    let quotaGroups: [QuotaGroup]
     let isBudgetEstimated: Bool
 
     init(
@@ -159,6 +177,7 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
         message: String?,
         tokenBreakdown: TokenBreakdown? = nil,
         topModels: [ModelTokenUsage] = [],
+        quotaGroups: [QuotaGroup] = [],
         isBudgetEstimated: Bool = false
     ) {
         self.tool = tool
@@ -174,6 +193,7 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
         self.message = message
         self.tokenBreakdown = tokenBreakdown
         self.topModels = topModels
+        self.quotaGroups = quotaGroups
         self.isBudgetEstimated = isBudgetEstimated
     }
 
@@ -191,6 +211,7 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
         case message
         case tokenBreakdown
         case topModels
+        case quotaGroups
         case isBudgetEstimated
     }
 
@@ -209,6 +230,7 @@ struct UsageSnapshot: Codable, Identifiable, Equatable {
         message = try container.decodeIfPresent(String.self, forKey: .message)
         tokenBreakdown = try container.decodeIfPresent(TokenBreakdown.self, forKey: .tokenBreakdown)
         topModels = try container.decodeIfPresent([ModelTokenUsage].self, forKey: .topModels) ?? []
+        quotaGroups = try container.decodeIfPresent([QuotaGroup].self, forKey: .quotaGroups) ?? []
         isBudgetEstimated = try container.decodeIfPresent(Bool.self, forKey: .isBudgetEstimated) ?? false
     }
 

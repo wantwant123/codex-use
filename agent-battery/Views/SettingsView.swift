@@ -4,9 +4,6 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
 
-    private static let dailyBudgetPresets = [2_000_000, 5_000_000, 10_000_000, 20_000_000, 50_000_000, 100_000_000]
-    private static let weeklyBudgetPresets = [10_000_000, 25_000_000, 50_000_000, 100_000_000, 200_000_000, 500_000_000]
-
     var body: some View {
         TabView {
             menuBarTab
@@ -83,22 +80,6 @@ struct SettingsView: View {
     private var toolsTab: some View {
         Form {
             Section("settings.sectionAntigravity") {
-                BudgetPickerRow(
-                    titleKey: "settings.dailyTokenBudget",
-                    value: $settings.antigravityDailyTokenBudget,
-                    presets: Self.dailyBudgetPresets,
-                    step: 1_000_000,
-                    range: 100_000...500_000_000
-                )
-
-                BudgetPickerRow(
-                    titleKey: "settings.weeklyTokenBudget",
-                    value: $settings.antigravityWeeklyTokenBudget,
-                    presets: Self.weeklyBudgetPresets,
-                    step: 5_000_000,
-                    range: 500_000...2_000_000_000
-                )
-
                 HStack(spacing: 8) {
                     TextField("settings.brainPath", text: $settings.antigravityBrainPath)
                         .textFieldStyle(.roundedBorder)
@@ -110,7 +91,7 @@ struct SettingsView: View {
                     }
                 }
 
-                Text("settings.antigravityBudgetHint")
+                Text("settings.antigravityLiveHint")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -233,55 +214,4 @@ struct SettingsView: View {
         }
         return "v\(version) (\(build))"
     }()
-}
-
-private struct BudgetPickerRow: View {
-    let titleKey: LocalizedStringKey
-    @Binding var value: Int
-    let presets: [Int]
-    let step: Int
-    let range: ClosedRange<Int>
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(titleKey)
-                Spacer()
-                Text(verbatim: UsageFormatters.compactTokenCountText(value))
-                    .font(.callout.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(.primary)
-                Stepper(
-                    "",
-                    value: $value,
-                    in: range,
-                    step: step
-                )
-                .labelsHidden()
-                .controlSize(.small)
-            }
-
-            HStack(spacing: 5) {
-                ForEach(presets, id: \.self) { preset in
-                    let selected = value == preset
-                    Button {
-                        value = preset
-                    } label: {
-                        Text(verbatim: UsageFormatters.compactTokenCountText(preset))
-                            .font(.caption2.weight(selected ? .semibold : .regular).monospacedDigit())
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3.5)
-                            .background(
-                                selected ? Color.accentColor.opacity(0.18) : Color.primary.opacity(0.05),
-                                in: Capsule()
-                            )
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(selected ? Color.accentColor.opacity(0.55) : Color.clear, lineWidth: 0.75)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
 }

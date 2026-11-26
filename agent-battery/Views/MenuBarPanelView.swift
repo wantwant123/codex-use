@@ -30,8 +30,6 @@ struct MenuBarPanelView: View {
                 snapshot: store.snapshot(for: settings.selectedTool),
                 lastRefreshAt: store.lastRefreshAt,
                 refreshInterval: settings.refreshInterval,
-                dailyBudget: settings.antigravityDailyTokenBudget,
-                weeklyBudget: settings.antigravityWeeklyTokenBudget,
                 tokenSpeed: settings.selectedTool == .codex ? tokenSpeed : nil
             )
 
@@ -105,12 +103,12 @@ private struct ToolSwitcherBar: View {
                         Spacer(minLength: 2)
 
                         Text(verbatim: UsageFormatters.percentText(percent))
-                            .font(.caption2.weight(.semibold).monospacedDigit())
-                            .foregroundStyle(percent == nil ? .secondary : SurfaceStyle.remainingColor(percent))
+                            .font(.caption2.weight(.bold).monospacedDigit())
+                            .foregroundStyle(percent == nil ? Color.secondary : SurfaceStyle.remainingColor(percent))
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                             .background(
-                                (percent == nil ? Color.secondary : SurfaceStyle.remainingColor(percent)).opacity(0.14),
+                                (percent == nil ? Color.secondary : SurfaceStyle.remainingColor(percent)).opacity(0.20),
                                 in: Capsule()
                             )
                     }

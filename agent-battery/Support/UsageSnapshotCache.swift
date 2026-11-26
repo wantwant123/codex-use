@@ -35,7 +35,7 @@ struct UsageSnapshotCache {
 
 extension UsageSnapshot {
     var hasUsageValues: Bool {
-        fiveHourRemainingPercent != nil || weeklyRemainingPercent != nil
+        fiveHourRemainingPercent != nil || weeklyRemainingPercent != nil || !quotaGroups.isEmpty
     }
 
     func markingElapsedResetsStale(now: Date = Date()) -> UsageSnapshot {
@@ -64,6 +64,7 @@ extension UsageSnapshot {
             message: message,
             tokenBreakdown: tokenBreakdown,
             topModels: topModels,
+            quotaGroups: quotaGroups,
             isBudgetEstimated: isBudgetEstimated
         )
     }

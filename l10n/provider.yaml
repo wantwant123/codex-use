@@ -10,3 +10,6 @@ liveQuotaUnavailable:
 antigravityNoLogs:
   en: "No Antigravity transcript logs found under %@."
   zh: "%@ 下未找到 Antigravity 会话日志。"
+antigravityLiveUnavailable:
+  en: "Antigravity is not running or local quota API is unavailable. Open Antigravity to sync live quota."
+  zh: "未检测到运行中的 Antigravity，打开 Antigravity 即可同步实时额度。"

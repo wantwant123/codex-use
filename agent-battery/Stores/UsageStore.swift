@@ -156,11 +156,25 @@ final class UsageStore: ObservableObject {
         }
 
         if let cachedSnapshot = snapshotCache.snapshot(for: projectedSnapshot.tool, now: now) {
-            snapshotCache.store(cachedSnapshot, now: now)
-            return cachedSnapshot.replacingStatus(
-                .stale,
-                message: fallbackMessage(from: projectedSnapshot)
+            let merged = UsageSnapshot(
+                tool: cachedSnapshot.tool,
+                fiveHourRemainingPercent: cachedSnapshot.fiveHourRemainingPercent,
+                weeklyRemainingPercent: cachedSnapshot.weeklyRemainingPercent,
+                fiveHourResetAt: cachedSnapshot.fiveHourResetAt,
+                weeklyResetAt: cachedSnapshot.weeklyResetAt,
+                dailyTokenUsage: projectedSnapshot.dailyTokenUsage ?? cachedSnapshot.dailyTokenUsage,
+                weeklyTokenUsage: projectedSnapshot.weeklyTokenUsage ?? cachedSnapshot.weeklyTokenUsage,
+                monthlyTokenUsage: projectedSnapshot.monthlyTokenUsage ?? cachedSnapshot.monthlyTokenUsage,
+                updatedAt: cachedSnapshot.updatedAt,
+                status: .stale,
+                message: fallbackMessage(from: projectedSnapshot),
+                tokenBreakdown: projectedSnapshot.tokenBreakdown ?? cachedSnapshot.tokenBreakdown,
+                topModels: projectedSnapshot.topModels.isEmpty ? cachedSnapshot.topModels : projectedSnapshot.topModels,
+                quotaGroups: cachedSnapshot.quotaGroups,
+                isBudgetEstimated: cachedSnapshot.isBudgetEstimated
             )
+            snapshotCache.store(merged, now: now)
+            return merged
         }
 
         return snapshotPreservingPreviousValues(projectedSnapshot, now: now)

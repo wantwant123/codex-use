@@ -4,8 +4,6 @@ struct UsageToolCardView: View {
     let snapshot: UsageSnapshot
     let lastRefreshAt: Date?
     let refreshInterval: RefreshInterval
-    let dailyBudget: Int
-    let weeklyBudget: Int
     let tokenSpeed: TokenSpeedStore?
 
     var body: some View {
@@ -64,7 +62,7 @@ struct UsageToolCardView: View {
                 if let tokenSpeed {
                     TokenSpeedInlineRow(tokenSpeed: tokenSpeed)
                 } else {
-                    Text("usage.budgetHint")
+                    Text("usage.antigravityLiveHint")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -124,33 +122,23 @@ struct UsageToolCardView: View {
     }
 
     private var antigravityQuotaSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if snapshot.hasFiveHourQuota || snapshot.hasWeeklyQuota {
-                HeroBatteryQuotaBox(
-                    titleKey: "usage.dailyBudgetRemaining",
-                    percent: snapshot.fiveHourRemainingPercent,
-                    subtitle: resetText(snapshot.fiveHourResetAt),
-                    trailingBadge: String(
-                        format: NSLocalizedString("usage.budgetTarget", comment: ""),
-                        UsageFormatters.compactTokenCountText(dailyBudget)
-                    )
-                )
-
-                CompactQuotaProgressRow(
-                    titleKey: "usage.weeklyBudgetRemaining",
-                    percent: snapshot.weeklyRemainingPercent,
-                    trailingText: String(
-                        format: NSLocalizedString("usage.budgetTarget", comment: ""),
-                        UsageFormatters.compactTokenCountText(weeklyBudget)
-                    ) + " · " + resetText(snapshot.weeklyResetAt)
-                )
+        VStack(alignment: .leading, spacing: 7) {
+            if !snapshot.quotaGroups.isEmpty {
+                ForEach(snapshot.quotaGroups) { group in
+                    QuotaGroupCardView(group: group, resetText: resetText)
+                }
             } else {
-                Text("usage.quotaUnavailable")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 10)
-                    .insetTile(padding: 10)
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.callout)
+                        .foregroundStyle(SurfaceStyle.accent(for: .antigravity))
+                    Text("usage.antigravityOpenToSync")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .insetTile(padding: 10, cornerRadius: 10)
             }
         }
     }
@@ -162,12 +150,10 @@ struct UsageToolCardView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer()
-                if snapshot.tool == .codex {
-                    Text("usage.localTokenUsageHint")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
-                }
+                Text("usage.localTokenUsageHint")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
             }
 
             HStack(spacing: 6) {
@@ -197,32 +183,7 @@ struct UsageToolCardView: View {
         }
 
         if !snapshot.topModels.isEmpty {
-            VStack(alignment: .leading, spacing: 5) {
-                Text("usage.topModels")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                HStack(spacing: 5) {
-                    ForEach(snapshot.topModels) { item in
-                        HStack(spacing: 4) {
-                            Text(verbatim: item.model)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Text(verbatim: UsageFormatters.compactTokenCountText(item.tokens))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                        }
-                        .font(.caption2)
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 4)
-                        .background(.primary.opacity(0.05), in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .strokeBorder(.primary.opacity(0.07), lineWidth: 0.5)
-                        )
-                    }
-                }
-            }
+            TopModelsListView(models: snapshot.topModels, accent: SurfaceStyle.accent(for: .antigravity))
         }
     }
 
@@ -245,12 +206,10 @@ struct UsageToolCardView: View {
     }
 
     private var sourceBadgeText: String {
-        if snapshot.isBudgetEstimated {
-            return String(localized: "usage.budgetEstimatedBadge")
+        if snapshot.status == .available && (!snapshot.quotaGroups.isEmpty || snapshot.tool == .codex) {
+            return String(localized: "usage.liveBadge")
         }
-        return snapshot.status == .available
-            ? String(localized: "usage.liveBadge")
-            : String(localized: "usage.localBadge")
+        return String(localized: "usage.localBadge")
     }
 
     private var statusTint: Color {
@@ -271,6 +230,152 @@ struct UsageToolCardView: View {
         }
         let countdown = UsageFormatters.resetCountdownText(until: date)
         return String(format: NSLocalizedString("usage.resetsIn", comment: ""), countdown)
+    }
+}
+
+private struct QuotaGroupCardView: View {
+    let group: QuotaGroup
+    let resetText: (Date?) -> String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(verbatim: group.name)
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.primary)
+
+            if group.hasWeeklyQuota {
+                QuotaRingBarRow(
+                    labelKey: "usage.weeklyLimitShort",
+                    percent: group.weeklyRemainingPercent,
+                    resetSubtitle: group.weeklyResetAt.map(resetText)
+                )
+            }
+
+            if group.hasFiveHourQuota {
+                QuotaRingBarRow(
+                    labelKey: "usage.fiveHourLimitShort",
+                    percent: group.fiveHourRemainingPercent,
+                    resetSubtitle: group.fiveHourResetAt.map(resetText)
+                )
+            }
+        }
+        .insetTile(padding: 9, cornerRadius: 11)
+    }
+}
+
+private struct QuotaRingBarRow: View {
+    let labelKey: LocalizedStringKey
+    let percent: Double?
+    let resetSubtitle: String?
+
+    private var fraction: Double {
+        guard let percent else { return 0 }
+        return UsageMath.clampPercent(percent) / 100
+    }
+
+    private var tint: Color {
+        SurfaceStyle.remainingColor(percent)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(labelKey)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.primary)
+
+                if let resetSubtitle {
+                    Text(verbatim: resetSubtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 4)
+
+                Text(verbatim: UsageFormatters.percentText(percent))
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(percent == nil ? Color.secondary : tint)
+
+                QuotaMiniRing(fraction: fraction, color: tint)
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(.primary.opacity(0.08))
+                    Capsule()
+                        .fill(tint.gradient)
+                        .frame(width: proxy.size.width * fraction)
+                }
+            }
+            .frame(height: 4.5)
+        }
+    }
+}
+
+private struct QuotaMiniRing: View {
+    let fraction: Double
+    let color: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.primary.opacity(0.14), lineWidth: 2)
+            Circle()
+                .trim(from: 0, to: fraction)
+                .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+        }
+        .frame(width: 12, height: 12)
+    }
+}
+
+private struct TopModelsListView: View {
+    let models: [ModelTokenUsage]
+    let accent: Color
+
+    private var maxTokens: Int {
+        max(models.map(\.tokens).max() ?? 1, 1)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("usage.topModels")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 5) {
+                ForEach(models) { item in
+                    let ratio = min(max(Double(item.tokens) / Double(maxTokens), 0.04), 1.0)
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: item.model)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.primary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 6)
+                            Text(verbatim: UsageFormatters.compactTokenCountText(item.tokens))
+                                .font(.caption2.weight(.semibold).monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(.primary.opacity(0.07))
+                                Capsule()
+                                    .fill(accent.opacity(0.75))
+                                    .frame(width: proxy.size.width * ratio)
+                            }
+                        }
+                        .frame(height: 3)
+                    }
+                }
+            }
+        }
+        .insetTile(padding: 8, cornerRadius: 10)
     }
 }
 

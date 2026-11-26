@@ -109,3 +109,15 @@ noModelsYet:
 budgetTarget:
   en: "Budget %@"
   zh: "预算 %@"
+antigravityLiveHint:
+  en: "Synced from local Antigravity & session transcripts"
+  zh: "同步自本机 Antigravity 实时额度与会话日志"
+antigravityOpenToSync:
+  en: "Open Antigravity to sync live model quotas"
+  zh: "打开 Antigravity 即可同步实时模型额度"
+weeklyLimitShort:
+  en: "Weekly"
+  zh: "每周额度"
+fiveHourLimitShort:
+  en: "5h"
+  zh: "5 小时"

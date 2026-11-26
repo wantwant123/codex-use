@@ -17,10 +17,16 @@ enum SurfaceStyle {
     static func remainingColor(_ percent: Double?) -> Color {
         guard let percent else { return .secondary }
         let clamped = UsageMath.clampPercent(percent) / 100
+        if clamped < 0.16 {
+            return Color(red: 1.0, green: 0.36, blue: 0.32)
+        }
+        if clamped < 0.40 {
+            return Color(red: 1.0, green: 0.64, blue: 0.18)
+        }
         return Color(
             hue: 0.34 * clamped,
-            saturation: 0.80,
-            brightness: 0.82
+            saturation: 0.78,
+            brightness: 0.86
         )
     }
 }

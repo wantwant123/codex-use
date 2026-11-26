@@ -85,6 +85,9 @@ weeklyTokenBudget:
 antigravityBudgetHint:
   en: "Antigravity has no public quota API. Remaining % is estimated locally from ~/.gemini/antigravity/brain transcripts against your custom budgets."
   zh: "Antigravity 暂无公开额度接口，剩余百分比将根据本地会话日志与此处设置的自定义 Token 预算估算。"
+antigravityLiveHint:
+  en: "Live quotas (Gemini / Claude & GPT) sync from the running local Antigravity client. Token usage is read from local transcripts."
+  zh: "实时分组额度（Gemini / Claude & GPT）直接读取本机运行中的 Antigravity；Token 用量来自本地会话日志。"
 sessionsPath:
   en: "Sessions folder"
   zh: "会话目录"
